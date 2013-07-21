@@ -47,7 +47,12 @@ SRCS=		${PC} \
 		pkg.pc
 
 MAN=		pkg_printf.3 \
-		pkg-repository.5
+		pkg-repository.5 \
+		pkg-metadata.5
+
+MLINKS=		pkg-metadata.5	pkg-manifest.5 \
+		pkg-metadata.5	pkg-tarball.5 \
+		pkg-metadata.5	pkg-compact_manifest.5
 
 CLEANFILES=	${PC} ${PKGH}
 

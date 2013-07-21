@@ -1,0 +1,121 @@
+.\"
+.\" FreeBSD pkg - a next generation package for the installation and
+.\" maintenance of non-core utilities.
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\"
+.\"     @(#)pkg-repository.5
+.\" $FreeBSD$
+.\"
+.Dd July 20, 2013
+.Dt PKG-MANIFEST 5
+.Os
+.Sh NAME
+.Nm "package metadata"
+.Nd supplementary data about packages used by
+.Xr pkg 8
+.Pp
+.Nm "package manifest"
+.Nd format of the package manifests used by
+.Xr pkg 8 .
+.Pp
+.Nm "package compact_manifest"
+.Nd the optional compact version of the package manifest.
+.Pp
+.Nm "package tarball"
+.Nd format of a package when gathered into a single archive file
+for distribution between systems.
+.Sh DESCRIPTION
+The
+.Xr pkg 8
+system is built around the manipulation of
+.Em packages
+- collections of files that form part or all of a suite of software,
+and that are installed or deleted as a unit.
+.Pp
+Packages may have requirements: other software beyond the base system
+that has to be installed for it to function correctly.
+In many cases the requirement is for the availability of a particular
+shared library with a set ABI version.
+Other dependencies might be on the presence of some specific data or
+executable program.
+Similarly, packages may have conflicts: other software in the presence
+of which the packaged software will not run correctly, or cannot be
+installed.
+Conflicts commonly result from several packages wanting to install
+files to the same place.
+.Pp
+Each package has a
+.Em name ,
+.Em version
+and an
+.Em origin .
+The name and version are typically derived from the upstream project
+supplying the software, occasionally with minor changes necessary for
+the proper working of the ports tree.
+The package origin is the unique key for each different port within
+the ports tree: this allows the ports to contain several versions of
+the same software package, or several different software packages that
+coincidentally have the same name.
+.Pp
+The packaging system will track the availability of version upgrades
+and manage replacing an older with a newer version, resolving any
+changes in dependencies and conflicts as necessary.
+.Sh PACKAGE METADATA
+To manage the package data - the collection of files, directories,
+links and symbolic links it contains - effectively, various other data
+about the package must be tracked.
+This is
+.Nm package metadata ,
+and manipulation and storage of such is the key to all
+.Xr pkg 8
+operations.
+The
+.Pa +MANIFEST
+file within a package tarball contains metadata specific to the package.
+Package repository catalogues (see
+.Xr pkg-repository 5 ,
+.Xr pkg-repo 8 )
+consist of collections of selected metadata from the packages in
+the repository.
+The local package database,
+.Pa /var/db/pkg/local.sqlite ,
+is nothing more than the collected metadata of all the packages
+installed on the system. 
+.Sh INSTALLED AND UNINSTALLED PACKAGES
+Packages exist in two distinct states: installed, with the files
+distributed around the filesystem and package metadata registered in
+the local database
+.Pa /var/db/pkg/local.sqlite ;
+or with the files and metadata collected together into a
+.Nm "package tarball"
+suitable for transmission between systems.
+See
+.Xr pkg-create 8
+for how to convert the installed form of a package into a package
+tarball, and
+.Xr pkg-add 8
+or
+.Xr pkg-install 8 
+for the converse.
+.Pp
+With two exceptions, package metadata is conserved across such
+transformations.
+Those are package lock status (see
+.Xr pkg-lock 8 )
+and package autoremove status (see
+.Xr pkg-autoremove 8
+and the description of the
+.Fl A
+flag in
+.Xr pkg-set 8 ).
+
+.Pp

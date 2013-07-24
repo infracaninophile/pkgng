@@ -41,18 +41,6 @@ system is built around the manipulation of
 - collections of files that form part or all of a suite of software,
 and that are installed or deleted as a unit.
 .Pp
-Packages may have requirements: other software beyond the base system
-that has to be installed for it to function correctly.
-In many cases the requirement is for the availability of a particular
-shared library with a set ABI version.
-Other dependencies might be on the presence of some specific data or
-executable program.
-Similarly, packages may have conflicts: other software in the presence
-of which the packaged software will not run correctly, or cannot be
-installed.
-Conflicts commonly result from several packages wanting to install
-files to the same place.
-.Pp
 Each package has a
 .Em name ,
 .Em version
@@ -66,30 +54,64 @@ the ports tree: this allows the ports to contain several versions of
 the same software package, or several different software packages that
 coincidentally have the same name.
 .Pp
+Packages can have requirements: other software beyond the base system
+that has to be installed for it to function correctly.
+In many cases the requirement is for the availability of a particular
+shared library with a set ABI version.
+Other requirements might be for the presence of some specific data or
+executable program.
+Similarly, packages may have conflicts: other software in whose
+presence the packaged software will not run correctly, or cannot be
+installed.
+Conflicts commonly result from several packages wanting to install
+files of the same name.
+.Pp
 The packaging system will track the availability of version upgrades
 and manage replacing an older with a newer version, resolving any
 changes in dependencies and conflicts as necessary.
 .Sh PACKAGE METADATA
-To manage the package data - the collection of files, directories,
-links and symbolic links it contains - effectively, various other data
-about the package must be tracked.
-This is
+The package data - the collection of files, directories and symbolic
+links it contains - requires various other data about itself to be
+tracked in order to manipulate it effectively.
+This is the
 .Nm package metadata ,
-and manipulation and storage of such is the key to all
+and manipulation, storage and maintenance of its integrity are crucial
+to all
 .Xr pkg 8
 operations.
 The
 .Pa +MANIFEST
-file within a package tarball contains metadata specific to the package.
-Package repository catalogues (see
+and
+.Pa +COMPACT_MANIFEST
+files within a package tarball are YAML documents containing the
+metadata specific to the package.
+.Pa +COMPACT_MANIFEST
+is a subset of the full package metadata held in
+.Pa +MANIFEST .
+It is used during generation of package repository catalogues (see
 .Xr pkg-repository 5 ,
-.Xr pkg-repo 8 )
-consist of collections of selected metadata from the packages in
-the repository.
+.Xr pkg-repo 8 ).
+These catalogues consist of collections of selected metadata from the
+packages in the repository, with the only other content being an
+optional cryptographic signature.
 The local package database,
 .Pa /var/db/pkg/local.sqlite ,
 is nothing more than the collected metadata of all the packages
-installed on the system. 
+installed on the system.
+.Pa +MTREE_DIRS
+is a legacy metadata file, retained for compatibility with the
+old package tools (
+.Xr pkg_add 1 )
+which provides a description of the standard filesystem layout
+under
+.Ev $LOCALBASE
+common to all packages.
+The format is described in
+.Xr mtree 5.
+Eventually the necessary parts of the description of the common
+package layout will be subsumed into the
+.Pa +MANIFEST
+file.
 .Sh INSTALLED AND UNINSTALLED PACKAGES
 Packages exist in two distinct states: installed, with the files
 distributed around the filesystem and package metadata registered in
@@ -98,6 +120,7 @@ the local database
 or with the files and metadata collected together into a
 .Nm "package tarball"
 suitable for transmission between systems.
+The two forms are readily interconvertible.
 See
 .Xr pkg-create 8
 for how to convert the installed form of a package into a package
@@ -117,5 +140,47 @@ and the description of the
 .Fl A
 flag in
 .Xr pkg-set 8 ).
-
+This document will concentrate on describing the
+.Nm package tarball
+form.
+Whilst the same data is available from the local package database, no
+guarantees about the database schema will be made.
+The schema is subject to change without notice, and users are advised to
+access the data only through the API provided by
+.Pa libpkg.so.1 .
+.Sh PACKAGE TARBALLS
+The package tarball is a
+.Xr tar 1
+format archive file.
+Any form of compression understood by
+.Xr libarchive 3
+may be used, but the default is
+.Xr xz 1
+compression, as this gives the best available compression ratios.
+Package tarballs are conventionally named based on the name and 
+version of the software they contain with a
+.Pa .txz
+extension, but this is not mandatory.
+Any file name may be used, so long as the content follows the correct
+format.
+.Pp
+Each package tarball contains a sequence of files.
+The initial file or files, distinguished by an archive name 
+entry 
+.Em without
+a leading path, and a file name begining with a 
+.Sq +
+character, contain package metadata.
+Of these, only the
+.Pa +MANIFEST
+file is mandatory: other metadata files are optional.
+.Pp
+All subsequent files in the package archive are the package data.
+Data files have archive name entries which are the fully qualified
+path relative to the root directory, which they will be copied to on
+package installation.
+There is no facility for relocating package files, other than when installing
+into a chroot or jail.
+Even so, the view of the filesystem visible to the package files at
+run-time should match the layout encoded into the package tarball.
 .Pp

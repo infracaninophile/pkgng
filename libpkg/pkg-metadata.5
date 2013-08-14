@@ -15,12 +15,12 @@
 .\"     @(#)pkg-repository.5
 .\" $FreeBSD$
 .\"
-.Dd July 20, 2013
+.Dd August 11, 2013
 .Dt PKG-MANIFEST 5
 .Os
 .Sh NAME
 .Nm "package metadata"
-.Nd supplementary data about packages used by
+.Nd supplementary data used by
 .Xr pkg 8
 .Pp
 .Nm "package manifest"
@@ -36,90 +36,139 @@ for distribution between systems.
 .Sh DESCRIPTION
 The
 .Xr pkg 8
-system is built around the manipulation of
-.Em packages
-- collections of files that form part or all of a suite of software,
+system exists for the manipulation of
+.Em packages :
+collections of files that form part or all of a suite of software,
 and that are installed or deleted as a unit.
+Packages track not only the
+.Em files ,
+.Em directories
+and
+.Em symbolic links
+they contain, but also file
+.Em checksums,
+plus
+.Em user 
+and
+.Em group
+ownership and filesystem
+.Em permissions
+where those take non-standard values.
 .Pp
 Each package has a
 .Em name ,
 .Em version
 and an
 .Em origin .
-The name and version are typically derived from the upstream project
-supplying the software, occasionally with minor changes necessary for
-the proper working of the ports tree.
+The name and version are typically derived from the upstream project,
+occasionally with minor augmentations necessary for the proper
+working of the ports system.
+The packaging system tracks the availability of verson upgrades and
+manages replacing older with newer versions, resolving any changes in
+dependencies or conflicts encountered.
 The package origin is the unique key for each different port within
 the ports tree: this allows the ports to contain several versions of
-the same software package, or several different software packages that
+the same software package, or distinct software packages that
 coincidentally have the same name.
 .Pp
-Packages can have requirements: other software beyond the base system
-that has to be installed for it to function correctly.
-In many cases the requirement is for the availability of a particular
-shared library with a set ABI version.
+Packages can have
+.Em requirements :
+other software beyond the base system that has to be installed for it
+to function correctly.
+In many cases the requirement is for a particular ABI version of a
+shared library.
 Other requirements might be for the presence of some specific data or
-executable program.
-Similarly, packages may have conflicts: other software in whose
-presence the packaged software will not run correctly, or cannot be
-installed.
-Conflicts commonly result from several packages wanting to install
-files of the same name.
+executable programs.
+Similarly, packages may have
+.Em conflicts :
+other software in whose presence the packaged software cannot be
+installed or will not run correctly.
+Conflicts commonly result from more than one package wanting to
+install files of the same name.
 .Pp
-The packaging system will track the availability of version upgrades
-and manage replacing an older with a newer version, resolving any
-changes in dependencies and conflicts as necessary.
-.Sh PACKAGE METADATA
-The package data - the collection of files, directories and symbolic
-links it contains - requires various other data about itself to be
-tracked in order to manipulate it effectively.
-This is the
-.Nm package metadata ,
-and manipulation, storage and maintenance of its integrity are crucial
-to all
-.Xr pkg 8
-operations.
-The
+Packages may also need
+.Em scripts
+to be run on installation, deinstallation or upgrade; for instance to
+set up a new user id to own files or processes, or to set up directory
+structures to hold working data not counted as part of the package.
+.Pp
+
+Finally, a package also has a long- and a short- form description
+(called
+.Em description
+and
+.Em comment ,
+respectively), a
+.Em maintainer
+responsible for debugging and keeping the port up to date, frequently
+a
+.Em URL
+link to the website for the originating project, possibly a
+.Em message
+set by the maintainer for the information of the user; often the next
+steps they will need to take after installation.
+A packages may also have
+.Em annotations ;
+ad hoc text added to packages by the user.
+.Sh PACKAGE METADATA STORAGE
+Collectively, all of the data contained within the package but
+additional to the actual file content of the package, is called the
+.Nm package metadata .
+.Pp
+Metadata are stored in four distinct forms across the package lifecycle.
+.Pp
+Two of these involve storage within sqlite(3) database schema:
+.Pa ${PKG_DBDIR}/local.sqlite ,
+the registry of all the pacakges installed on a system, and
+.Pa ${PKG_DBDIR}/repo-${reponame}.sqlite ,
+the repository catalogue for the repository named reponame in
+.Xr pkg.conf 5 .
+Whilst the same data is available from the local package or reposity
+catlogue databases, no guarantees about the database schema will be
+made; they are intended to be opaque to the user.  The schema are
+subject to change without notice, and users are advised to access the
+data only through the API provided by
+.Pa libpkg.so.1 .
+.Pp
+
+The other two forms are self-contained YAML documents: the
 .Pa +MANIFEST
 and
 .Pa +COMPACT_MANIFEST
-files within a package tarball are YAML documents containing the
-metadata specific to the package.
+files within a package tarball contain the metadata specific to that
+package. 
 .Pa +COMPACT_MANIFEST
 is a subset of the full package metadata held in
-.Pa +MANIFEST .
-It is used during generation of package repository catalogues (see
+.Pa +MANIFEST . 
+Package repository catalogues (see
 .Xr pkg-repository 5 ,
-.Xr pkg-repo 8 ).
-These catalogues consist of collections of selected metadata from the
-packages in the repository, with the only other content being an
-optional cryptographic signature.
-The local package database,
-.Pa /var/db/pkg/local.sqlite ,
-is nothing more than the collected metadata of all the packages
-installed on the system.
-.Pa +MTREE_DIRS
-is a legacy metadata file, retained for compatibility with the
-old package tools (
+.Xr pkg-repo 8 )
+consist of the collection of the
+.Pa +COMPACT_MANIFEST
+data from each of the packages within the repository, plus an optional
+cryptographic signature.
+.Pp
+Additionally a package may contain
+.Pa +MTREE_DIRS :
+an optional legacy metadata file, retained for compatibility with the
+old package tools (see
 .Xr pkg_add 1 )
-which provides a description of the standard filesystem layout
-under
+which provides a description of the standard filesystem layout under
 .Ev $LOCALBASE
-common to all packages.
-The format is described in
-.Xr mtree 5.
-Eventually the necessary parts of the description of the common
-package layout will be subsumed into the
-.Pa +MANIFEST
-file.
-.Sh INSTALLED AND UNINSTALLED PACKAGES
-Packages exist in two distinct states: installed, with the files
-distributed around the filesystem and package metadata registered in
-the local database
-.Pa /var/db/pkg/local.sqlite ;
-or with the files and metadata collected together into a
-.Nm "package tarball"
-suitable for transmission between systems.
+common to all packages. 
+This form is redundant as the 
+.Xr pkg 8
+native format is entirely capable of describing the layout.
+See
+.Xr mtree 5
+for a description of the format.
+.Pp
+Any single package may exist in two distinct states: installed, with
+the files distributed around the filesystem and package metadata
+registered in the local database
+.Pa ${PKG_DBDIR}/local.sqlite ;
+or with the files and metadata collected together into a package
+tarball suitable for transmission between systems. 
 The two forms are readily interconvertible.
 See
 .Xr pkg-create 8
@@ -127,7 +176,7 @@ for how to convert the installed form of a package into a package
 tarball, and
 .Xr pkg-add 8
 or
-.Xr pkg-install 8 
+.Xr pkg-install 8
 for the converse.
 .Pp
 With two exceptions, package metadata is conserved across such
@@ -139,36 +188,26 @@ and package autoremove status (see
 and the description of the
 .Fl A
 flag in
-.Xr pkg-set 8 ).
-This document will concentrate on describing the
-.Nm package tarball
-form.
-Whilst the same data is available from the local package database, no
-guarantees about the database schema will be made.
-The schema is subject to change without notice, and users are advised to
-access the data only through the API provided by
-.Pa libpkg.so.1 .
+.Xr pkg-set 8 )
+both of which only apply to installed packages.
 .Sh PACKAGE TARBALLS
-The package tarball is a
+The package tarball is a 
 .Xr tar 1
-format archive file.
+format archive file. 
 Any form of compression understood by
 .Xr libarchive 3
 may be used, but the default is
 .Xr xz 1
-compression, as this gives the best available compression ratios.
-Package tarballs are conventionally named based on the name and 
-version of the software they contain with a
-.Pa .txz
-extension, but this is not mandatory.
+compression, as this gives the smallest result.
+Package tarballs are conventionally named based on the name and
+version of the software they contain with a .txz extension, but this
+is not mandatory.
 Any file name may be used, so long as the content follows the correct
 format.
 .Pp
 Each package tarball contains a sequence of files.
-The initial file or files, distinguished by an archive name 
-entry 
-.Em without
-a leading path, and a file name begining with a 
+The initial file or files, distinguished by an archive name entry
+without a leading path, and a file name begining with a 
 .Sq +
 character, contain package metadata.
 Of these, only the
@@ -177,10 +216,41 @@ file is mandatory: other metadata files are optional.
 .Pp
 All subsequent files in the package archive are the package data.
 Data files have archive name entries which are the fully qualified
-path relative to the root directory, which they will be copied to on
+path rela- tive to the root directory, which they will be copied to on
 package installation.
-There is no facility for relocating package files, other than when installing
-into a chroot or jail.
+There is no facility for relocating package files, other than when
+installing into a chroot or jail.
 Even so, the view of the filesystem visible to the package files at
 run-time should match the layout encoded into the package tarball.
-.Pp
+.Sh METADATA
+.\"
+.\"name              CM
+.\"version           CM
+.\"origin            CM
+.\"comment           CM
+.\"arch              CM
+.\"www               CM
+.\"maintainer        CM
+.\"prefix            CM
+.\"path              CM optional
+.\"pkgsum            CM optional
+.\"licenselogic      CM
+.\"licenses          CM optional
+.\"flatsize          CM
+.\"pkgsize           CM if > 0
+.\"desc              CM
+.\"deps              CM if present
+.\"categories        CM if present
+.\"users             CM if present
+.\"groups            CM if present
+.\"shlibs_required   CM if present
+.\"shlibs_provided   CM if      present
+.\"options           CM if present
+.\"annotations       CM if present
+.\"files             M  if      present
+.\"directories       M  if present
+.\"scripts           M  if present
+.\"message           M  optional
+.\"lock              -
+.\"autoremove        -
+.\"

@@ -179,17 +179,18 @@ or
 .Xr pkg-install 8
 for the converse.
 .Pp
-With two exceptions, package metadata is conserved across such
+With three exceptions, package metadata is conserved across such
 transformations.
-Those are package lock status (see
-.Xr pkg-lock 8 )
-and package autoremove status (see
+These are package lock status (see
+.Xr pkg-lock 8 ) ,
+package autoremove status (see
 .Xr pkg-autoremove 8
 and the description of the
 .Fl A
 flag in
-.Xr pkg-set 8 )
-both of which only apply to installed packages.
+.Xr pkg-set 8 ) ,
+and the package installation timestamp, all of which only apply to
+installed packages.
 .Sh PACKAGE TARBALLS
 The package tarball is a 
 .Xr tar 1
@@ -223,7 +224,6 @@ installing into a chroot or jail.
 Even so, the view of the filesystem visible to the package files at
 run-time should match the layout encoded into the package tarball.
 .Sh METADATA
-.\"
 .\"name              CM
 .\"version           CM
 .\"origin            CM
@@ -253,4 +253,4 @@ run-time should match the layout encoded into the package tarball.
 .\"message           M  optional
 .\"lock              -
 .\"autoremove        -
-.\"
+

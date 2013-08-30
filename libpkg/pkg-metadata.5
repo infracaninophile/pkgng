@@ -224,33 +224,34 @@ installing into a chroot or jail.
 Even so, the view of the filesystem visible to the package files at
 run-time should match the layout encoded into the package tarball.
 .Sh METADATA
-.\"name              CM
-.\"version           CM
-.\"origin            CM
-.\"comment           CM
+.\"annotations       CM if present
 .\"arch              CM
-.\"www               CM
-.\"maintainer        CM
-.\"prefix            CM
-.\"path              CM optional
-.\"pkgsum            CM optional
+.\"autoremove        -
+.\"categories        CM if present
+.\"comment           CM
+.\"deps              CM if present
+.\"desc              CM
+.\"directories       M  if present
+.\"files             M  if      present
+.\"flatsize          CM
+.\"groups            CM if present
 .\"licenselogic      CM
 .\"licenses          CM optional
-.\"flatsize          CM
-.\"pkgsize           CM if > 0
-.\"desc              CM
-.\"deps              CM if present
-.\"categories        CM if present
-.\"users             CM if present
-.\"groups            CM if present
-.\"shlibs_required   CM if present
-.\"shlibs_provided   CM if      present
-.\"options           CM if present
-.\"annotations       CM if present
-.\"files             M  if      present
-.\"directories       M  if present
-.\"scripts           M  if present
-.\"message           M  optional
 .\"lock              -
-.\"autoremove        -
+.\"maintainer        CM
+.\"message           M  optional
+.\"mtree	     -
+.\"name              CM
+.\"options           CM if present
+.\"origin            CM
+.\"path              CM optional
+.\"pkgsize           CM if > 0
+.\"pkgsum            CM optional
+.\"prefix            CM
+.\"scripts           M  if present
+.\"shlibs_provided   CM if      present
+.\"shlibs_required   CM if present
+.\"users             CM if present
+.\"version           CM
+.\"www               CM
 

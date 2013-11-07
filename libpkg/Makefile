@@ -87,10 +87,8 @@ CFLAGS+=	-I. \
 		-I${.CURDIR} \
 		-I${.CURDIR}/../external/sqlite \
 		-I${.CURDIR}/../external/uthash \
-		-I${.CURDIR}/../external/libucl/include
-
-CFLAGS+=	-I ${.CURDIR}/../external/libyaml/include
-LDADD+=		-L../external/libyaml -lyaml
+		-I${.CURDIR}/../external/libucl/include \
+		-I${.CURDIR}/../external/libyaml/include
 
 .if defined(WITH_BUNDLED_LIBELF)
 CFLAGS+=	-I${.CURDIR}/../external/libelf \
@@ -103,6 +101,7 @@ LDADD+=		-L../external/sqlite \
 
 .if defined(WITH_BUNDLED_LIBELF)
 LDADD+=		-L../external/libelf
+DPADD+=		${.OBJDIR}/external/libelf/libelf.a
 .endif
 
 LDADD+=		-lsqlite3 \
@@ -112,7 +111,12 @@ LDADD+=		-lsqlite3 \
 		-lelf \
 		-lutil \
 		-lpthread \
-		-lucl
+		-lucl \
+		-lyaml
+
+DPADD+=		${.OBJDIR}/../external/sqlite/libsqlite3.a \
+		${.OBJDIR}/../external/libyaml/libyaml.a \
+		${.OBJDIR}/../external/libucl/libucl.a
 
 .if exists(/usr/include/edit/readline/readline.h)
 LDADD+=		-ledit
@@ -148,3 +152,12 @@ NOMAN=		yes
 	sed -e "s,__PREFIX__,${PREFIX},g" \
 	    -e "s,__VERSION__,${PKGVERSION},g" \
 	    ${.IMPSRC} > ${.TARGET}
+
+
+depend: staticdepend
+.ORDER: ${DEPENDFILE} staticdepend
+
+staticdepend:
+.if defined(DPADD) && !empty(DPADD)
+	echo lib${LIB}.a: ${DPADD} >> ${DEPENDFILE}
+.endif

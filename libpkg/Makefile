@@ -90,7 +90,7 @@ CFLAGS+=	-I. \
 		-I${.CURDIR}/../external/libucl/include \
 		-I${.CURDIR}/../external/libyaml/include
 
-.if defined(WITH_BUNDLED_LIBELF)
+.if !exists(/usr/lib/libelf.so)
 CFLAGS+=	-I${.CURDIR}/../external/libelf \
 		-DBUNDLED_LIBELF
 .endif
@@ -99,7 +99,7 @@ LDADD+=		-L../external/sqlite \
 		-L../external/libyaml \
 		-L../external/libucl
 
-.if defined(WITH_BUNDLED_LIBELF)
+.if !exists(/usr/lib/libelf.so)
 LDADD+=		-L../external/libelf
 DPADD+=		${.OBJDIR}/external/libelf/libelf.a
 .endif

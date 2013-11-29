@@ -44,6 +44,11 @@ GITHASH!=	cd ${.CURDIR} && git rev-parse --short HEAD
 CFLAGS+=	-DGITHASH="\"${GITHASH}\""
 .endif
 
+.if defined(PKG_PORTSDIR)
+CFLAGS+=	-DPORTSDIR=\"${PKG_PORTSDIR}\"
+MANFILTER=	sed -e "s|/usr/ports|${PKG_PORTSDIR}|g"
+.endif
+
 .if defined(DEBUG_FLAGS)
 .if ${DEBUG_FLAGS} == 1
 DEBUG_FLAGS=	-ggdb -O0
@@ -119,6 +124,7 @@ MAN=	pkg.8 \
 	pkg-autoremove.8 \
 	pkg-backup.8 \
 	pkg-check.8 \
+	pkg-config.8 \
 	pkg-convert.8 \
 	pkg-clean.8 \
 	pkg-create.8 \

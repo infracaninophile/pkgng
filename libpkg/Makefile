@@ -124,6 +124,10 @@ LDADD+=		-ledit
 
 CFLAGS+=	-DPREFIX=\"${PREFIX}\"
 
+.if defined(PKG_PORTSDIR)
+CFLAGS+=	-DPORTSDIR=\"${PKG_PORTSDIR}\"
+.endif
+
 .if defined(DEBUG_FLAGS)
 .if ${DEBUG_FLAGS} == 1
 DEBUG_FLAGS=	-ggdb -O0
@@ -134,8 +138,6 @@ DEBUG_FLAGS+=	-ggdb -O0
 .if defined(PROFILE_BUILD)
 DEBUG_FLAGS+=	-pg
 .endif
-NO_MAN=		yes
-NOMAN=		yes
 
 .include <bsd.lib.mk>
 

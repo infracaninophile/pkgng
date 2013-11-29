@@ -48,7 +48,7 @@ and
 they contain, but also file
 .Em checksums,
 plus
-.Em user 
+.Em user
 and
 .Em group
 ownership and filesystem
@@ -136,10 +136,10 @@ The other two forms are self-contained YAML documents: the
 and
 .Pa +COMPACT_MANIFEST
 files within a package tarball contain the metadata specific to that
-package. 
+package.
 .Pa +COMPACT_MANIFEST
 is a subset of the full package metadata held in
-.Pa +MANIFEST . 
+.Pa +MANIFEST .
 Package repository catalogues (see
 .Xr pkg-repository 5 ,
 .Xr pkg-repo 8 )
@@ -155,8 +155,8 @@ old package tools (see
 .Xr pkg_add 1 )
 which provides a description of the standard filesystem layout under
 .Ev $LOCALBASE
-common to all packages. 
-This form is redundant as the 
+common to all packages.
+This form is redundant as the
 .Xr pkg 8
 native format is entirely capable of describing the layout.
 See
@@ -168,7 +168,7 @@ the files distributed around the filesystem and package metadata
 registered in the local database
 .Pa ${PKG_DBDIR}/local.sqlite ;
 or with the files and metadata collected together into a package
-tarball suitable for transmission between systems. 
+tarball suitable for transmission between systems.
 The two forms are readily interconvertible.
 See
 .Xr pkg-create 8
@@ -192,9 +192,9 @@ flag in
 and the package installation timestamp, all of which only apply to
 installed packages.
 .Sh PACKAGE TARBALLS
-The package tarball is a 
+The package tarball is a
 .Xr tar 1
-format archive file. 
+format archive file.
 Any form of compression understood by
 .Xr libarchive 3
 may be used, but the default is
@@ -208,7 +208,7 @@ format.
 .Pp
 Each package tarball contains a sequence of files.
 The initial file or files, distinguished by an archive name entry
-without a leading path, and a file name begining with a 
+without a leading path, and a file name begining with a
 .Sq +
 character, contain package metadata.
 Of these, only the

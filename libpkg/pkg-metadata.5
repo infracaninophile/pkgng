@@ -15,7 +15,7 @@
 .\"     @(#)pkg-repository.5
 .\" $FreeBSD$
 .\"
-.Dd August 11, 2013
+.Dd January 14, 2013
 .Dt PKG-MANIFEST 5
 .Os
 .Sh NAME
@@ -119,19 +119,18 @@ Metadata are stored in four distinct forms across the package lifecycle.
 .Pp
 Two of these involve storage within sqlite(3) database schema:
 .Pa ${PKG_DBDIR}/local.sqlite ,
-the registry of all the pacakges installed on a system, and
+the registry of all the packages installed on a system, and
 .Pa ${PKG_DBDIR}/repo-${reponame}.sqlite ,
 the repository catalogue for the repository named reponame in
 .Xr pkg.conf 5 .
-Whilst the same data is available from the local package or reposity
+Whilst the same data is available from the local package or repository
 catlogue databases, no guarantees about the database schema will be
-made; they are intended to be opaque to the user.  The schema are
-subject to change without notice, and users are advised to access the
-data only through the API provided by
+made; they are intended to be opaque to the user.
+The schema are subject to change without notice, and users are advised
+to access the data only through the API provided by
 .Pa libpkg.so.1 .
 .Pp
-
-The other two forms are self-contained YAML documents: the
+The other two forms are self-contained JSON documents: the
 .Pa +MANIFEST
 and
 .Pa +COMPACT_MANIFEST

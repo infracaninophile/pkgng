@@ -14,6 +14,7 @@ dist_man_MANS=	pkg-add.8 \
 		pkg-info.8 \
 		pkg-install.8 \
 		pkg-lock.8 \
+		pkg-metadata.5 \
 		pkg-query.8 \
 		pkg-register.8 \
 		pkg-repo.8 \

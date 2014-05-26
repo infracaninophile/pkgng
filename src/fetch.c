@@ -58,9 +58,7 @@ exec_fetch(int argc, char **argv)
 	const char	*reponame = NULL;
 	int		 ch;
 	int		 retcode = EX_SOFTWARE;
-	bool		 auto_update;
-	bool		 upgrades_for_installed = false;
-	bool		 yes;
+	bool		 upgrades_for_installed = false, rc;
 	unsigned	 mode;
 	match_t		 match = MATCH_EXACT;
 	pkg_flags	 f = PKG_FLAG_NONE;
@@ -73,20 +71,12 @@ exec_fetch(int argc, char **argv)
 		{ "case-insensitive",	no_argument,		NULL,	'i' },
 		{ "quiet",		no_argument,		NULL,	'q' },
 		{ "repository",		required_argument,	NULL,	'r' },
-		{ "avaialbe-updates",	no_argument,		NULL,	'u' },
+		{ "available-updates",	no_argument,		NULL,	'u' },
 		{ "no-repo-update",	no_argument,		NULL,	'U' },
 		{ "regex",		no_argument,		NULL,	'x' },
 		{ "yes",		no_argument,		NULL,	'y' },
 		{ NULL,			0,			NULL,	0   },
 	};
-
-	auto_update = pkg_object_bool(pkg_config_get("REPO_AUTOUPDATE"));
-	yes = pkg_object_bool(pkg_config_get("ASSUME_ALWAYS_YES"));
-
-        /* Set default case sensitivity for searching */
-        pkgdb_set_case_sensitivity(
-                pkg_object_bool(pkg_config_get("CASE_SENSITIVE_MATCH"))
-                );
 
 	while ((ch = getopt_long(argc, argv, "aCdgiqr:Uuxy", longopts, NULL)) != -1) {
 		switch (ch) {
@@ -203,12 +193,13 @@ exec_fetch(int argc, char **argv)
 
 	if (!quiet) {
 		print_jobs_summary(jobs, "The following packages will be fetched:\n\n");
-
-		if (!yes)
-			yes = query_yesno(false, "\nProceed with fetching packages [y/N]: ");
+		rc = query_yesno(false, "\nProceed with fetching packages [y/N]: ");
+	}
+	else {
+		rc = true;
 	}
 	
-	if (!yes || pkg_jobs_apply(jobs) != EPKG_OK)
+	if (!rc || pkg_jobs_apply(jobs) != EPKG_OK)
 		goto cleanup;
 
 	retcode = EX_OK;

@@ -854,17 +854,12 @@ exec_query(int argc, char **argv)
 		{ "all",		no_argument,		NULL,	'a' },
 		{ "case-sensitive",	no_argument,		NULL,	'C' },
 		{ "evaluate",		required_argument,	NULL,	'e' },
-		{ "read-file",		required_argument,	NULL,	'F' },
+		{ "file",		required_argument,	NULL,	'F' },
 		{ "glob",		no_argument,		NULL,	'g' },
 		{ "case-insensitive",	no_argument,		NULL,	'i' },
 		{ "regex",		no_argument,		NULL,	'x' },
 		{ NULL,			0,			NULL,	0   },
 	};
-
-        /* Set default case sensitivity for searching */
-        pkgdb_set_case_sensitivity(
-                pkg_object_bool(pkg_config_get("CASE_SENSITIVE_MATCH"))
-                );
 
 	while ((ch = getopt_long(argc, argv, "aCe:F:gix", longopts, NULL)) != -1) {
 		switch (ch) {
@@ -955,7 +950,7 @@ exec_query(int argc, char **argv)
 
 	if (pkgdb_obtain_lock(db, PKGDB_LOCK_READONLY) != EPKG_OK) {
 		pkgdb_close(db);
-		warnx("Cannot get an read lock on a database, it is locked by another process");
+		warnx("Cannot get a read lock on a database, it is locked by another process");
 		return (EX_TEMPFAIL);
 	}
 

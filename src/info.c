@@ -121,16 +121,12 @@ exec_info(int argc, char **argv)
 		{ "by-origin",		no_argument,		NULL,	'O' },
 		{ "prefix",		no_argument,		NULL,	'p' },
 		{ "guiet",		no_argument,		NULL,	'q' },
-		{ "requirements",	no_argument,		NULL,	'r' },
+		{ "required-by",	no_argument,		NULL,	'r' },
 		{ "raw",		no_argument,		NULL,	'R' },
 		{ "size",		no_argument,		NULL,	's' },
 		{ "regex",		no_argument,		NULL,	'x' },
 		{ NULL,			0,			NULL,	0   },
 	};
-
-	/* Set default case sensitivity for searching */
-	pkgdb_set_case_sensitivity(
-	    pkg_object_bool(pkg_config_get("CASE_SENSITIVE_MATCH")));
 
 	/* TODO: exclusive opts ? */
 	while ((ch = getopt_long(argc, argv, "aAbBCdDeEfF:giIkloOpqrRsx", longopts, NULL)) != -1) {

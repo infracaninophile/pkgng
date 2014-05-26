@@ -133,6 +133,7 @@ struct pkg_dep {
 	struct sbuf	*origin;
 	struct sbuf	*name;
 	struct sbuf	*version;
+	char		*uid;
 	bool		 locked;
 	UT_hash_handle	 hh;
 };
@@ -145,7 +146,7 @@ enum pkg_conflict_type {
 };
 
 struct pkg_conflict {
-	struct sbuf		*origin;
+	struct sbuf		*uniqueid;
 	enum pkg_conflict_type type;
 	UT_hash_handle	hh;
 };
@@ -391,6 +392,7 @@ static struct pkg_key {
 	[PKG_ANNOTATIONS] = { "annotations", UCL_OBJECT },
 	[PKG_LICENSES] = { "licenses", UCL_ARRAY },
 	[PKG_CATEGORIES] = { "catagories", UCL_ARRAY },
+	[PKG_UNIQUEID] = { "uniqueid", UCL_STRING },
 };
 
 int pkg_fetch_file_to_fd(struct pkg_repo *repo, const char *url,
@@ -488,7 +490,7 @@ int pkgdb_integrity_append(struct pkgdb *db, struct pkg *p,
 		conflict_func_cb cb, void *cbdata);
 int pkgdb_integrity_check(struct pkgdb *db, conflict_func_cb cb, void *cbdata);
 struct pkgdb_it *pkgdb_integrity_conflict_local(struct pkgdb *db,
-						const char *origin);
+						const char *uniqueid);
 
 int pkg_set_mtree(struct pkg *, const char *mtree);
 

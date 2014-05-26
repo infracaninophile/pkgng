@@ -253,6 +253,7 @@ typedef enum {
 	PKG_ANNOTATIONS,
 	PKG_LICENSES,
 	PKG_CATEGORIES,
+	PKG_UNIQUEID,
 	PKG_NUM_FIELDS, 	/* end of fields */
 } pkg_attr;
 
@@ -920,7 +921,7 @@ const char *pkg_option_description(struct pkg_option const * const);
 const char *pkg_shlib_name(struct pkg_shlib const * const);
 
 /* pkg_conflict */
-const char *pkg_conflict_origin(const struct pkg_conflict *);
+const char *pkg_conflict_uniqueid(const struct pkg_conflict *);
 
 /* pkg_provide */
 const char *pkg_provide_name(const struct pkg_provide *);
@@ -1025,12 +1026,6 @@ int pkgdb_load(struct pkgdb *db, const char *src);
 int pkgdb_register_ports(struct pkgdb *db, struct pkg *pkg);
 
 /**
- * Unregister a package from the database
- * @return An error code.
- */
-int pkgdb_unregister_pkg(struct pkgdb *pkg, const char *origin);
-
-/**
  * Set the case sensitivity flag on or off.  Defaults to 
  * true (case_sensitive)
  */
@@ -1131,6 +1126,9 @@ int pkgdb_compact(struct pkgdb *db);
  */
 int pkg_add(struct pkgdb *db, const char *path, unsigned flags,
     struct pkg_manifest_key *keys, const char *location);
+
+int pkg_add_from_remote(struct pkgdb *db, const char *path, unsigned flags,
+    struct pkg_manifest_key *keys, const char *location, struct pkg *rp);
 
 #define PKG_ADD_UPGRADE			(1U << 0)
 #define PKG_ADD_USE_UPGRADE_SCRIPTS	(1U << 1)

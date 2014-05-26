@@ -59,7 +59,7 @@
 /* The package repo schema minor revision.
    Minor schema changes don't prevent older pkgng
    versions accessing the repo. */
-#define REPO_SCHEMA_MINOR 8
+#define REPO_SCHEMA_MINOR 9
 
 /* REPO_SCHEMA_VERSION=2007 */
 #define REPO_SCHEMA_VERSION (REPO_SCHEMA_MAJOR * 1000 + REPO_SCHEMA_MINOR)
@@ -905,7 +905,7 @@ pkgdb_repo_origins(sqlite3 *sqlite)
 	int ret;
 	static struct pkgdb repodb;
 	const char query_sql[] = ""
-		"SELECT id, origin, name, version, comment, "
+		"SELECT id, origin, name, name || '~' || origin as uniqueid, version, comment, "
 		"prefix, desc, arch, maintainer, www, "
 		"licenselogic, flatsize, pkgsize, "
 		"cksum, path AS repopath, manifestdigest "
@@ -1049,7 +1049,7 @@ pkgdb_rquery(struct pkgdb *db, const char *pattern, match_t match,
 	const char	*comp = NULL;
 	int		 ret;
 	char		 basesql[BUFSIZ] = ""
-		"SELECT id, origin, name, version, comment, "
+		"SELECT id, origin, name, name || '~' || origin as uniqueid, version, comment, "
 		"prefix, desc, arch, maintainer, www, "
 		"licenselogic, flatsize, pkgsize, "
 		"cksum, manifestdigest, path AS repopath, '%1$s' AS dbname "
@@ -1091,7 +1091,7 @@ pkgdb_rquery(struct pkgdb *db, const char *pattern, match_t match,
 	sbuf_cat(sql, " ORDER BY name;");
 	sbuf_finish(sql);
 
-	pkg_debug(4, "Pkgdb: running '%s'", sbuf_get(sql));
+	pkg_debug(4, "Pkgdb: running '%s' query for %s", sbuf_get(sql), pattern);
 	ret = sqlite3_prepare_v2(db->sqlite, sbuf_get(sql), sbuf_size(sql), &stmt, NULL);
 	if (ret != SQLITE_OK) {
 		ERROR_SQLITE(db->sqlite, sbuf_get(sql));
@@ -1116,6 +1116,7 @@ pkgdb_rquery_provide(struct pkgdb *db, const char *provide, const char *repo)
 	int		 ret;
 	const char	 basesql[] = ""
 			"SELECT p.id, p.origin, p.name, p.version, p.comment, "
+			"p.name || '~' || p.origin as uniqueid, "
 			"p.prefix, p.desc, p.arch, p.maintainer, p.www, "
 			"p.licenselogic, p.flatsize, p.pkgsize, "
 			"p.cksum, p.manifestdigest, p.path AS repopath, '%1$s' AS dbname "
@@ -1171,12 +1172,14 @@ pkgdb_find_shlib_provide(struct pkgdb *db, const char *require, const char *repo
 	int		 ret;
 	const char	 basesql[] = ""
 			"SELECT p.id, p.origin, p.name, p.version, p.comment, "
+			"p.name || '~' || p.origin as uniqueid, "
 			"p.prefix, p.desc, p.arch, p.maintainer, p.www, "
 			"p.licenselogic, p.flatsize, p.pkgsize, "
 			"p.cksum, p.manifestdigest, p.path AS repopath, '%1$s' AS dbname "
 			"FROM '%1$s'.packages AS p INNER JOIN '%1$s'.pkg_shlibs_provided AS ps ON "
 			"p.id = ps.package_id "
-			"WHERE ps.shlib_id IN (SELECT id FROM '%1$s'.shlibs WHERE name LIKE ?1 || '%%');";
+			"WHERE ps.shlib_id IN (SELECT id FROM '%1$s'.shlibs WHERE "
+			"name BETWEEN ?1 AND ?1 || '.9');";
 
 	assert(db != NULL);
 	reponame = pkgdb_get_reponame(db, repo);
@@ -1224,6 +1227,7 @@ pkgdb_find_shlib_require(struct pkgdb *db, const char *provide, const char *repo
 	int		 ret;
 	const char	 basesql[] = ""
 			"SELECT p.id, p.origin, p.name, p.version, p.comment, "
+			"p.name || '~' || p.origin as uniqueid, "
 			"p.prefix, p.desc, p.arch, p.maintainer, p.www, "
 			"p.licenselogic, p.flatsize, p.pkgsize, "
 			"p.cksum, p.manifestdigest, p.path AS repopath, '%1$s' AS dbname "

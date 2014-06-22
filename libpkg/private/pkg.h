@@ -49,6 +49,24 @@
 
 #define PKG_NUM_SCRIPTS 9
 
+/*
+ * Some compatibility checks
+ */
+#ifndef MAXLOGNAME
+# ifdef LOGIN_NAME_MAX
+# define MAXLOGNAME LOGIN_NAME_MAX
+# else
+# define MAXLOGNAME 64
+# endif
+#endif
+#ifndef __unused
+# ifdef __GNUC__
+# define __unused __attribute__ ((__unused__))
+# else
+# define __unused
+# endif
+#endif
+
 #if ARCHIVE_VERSION_NUMBER < 3000002
 #define archive_write_add_filter_xz(a) archive_write_set_compression_xz(a)
 #define archive_write_add_filter_bzip2(a) archive_write_set_compression_bzip2(a)
@@ -108,6 +126,9 @@
 
 extern int eventpipe;
 
+struct pkg_repo_it;
+struct pkg_repo;
+
 struct pkg {
 	ucl_object_t	*fields;
 	bool		 direct;
@@ -123,8 +144,9 @@ struct pkg {
 	struct pkg_shlib	*shlibs_provided;
 	struct pkg_conflict *conflicts;
 	struct pkg_provide	*provides;
-	unsigned       	 flags;
+	unsigned			flags;
 	pkg_t		 type;
+	struct pkg_repo		*repo;
 	UT_hash_handle	 hh;
 	struct pkg	*next;
 };
@@ -189,6 +211,7 @@ struct pkg_job_universe_item {
 	struct pkg *pkg;
 	struct job_pattern *jp;
 	int priority;
+	struct pkg *reinstall;
 	UT_hash_handle hh;
 	struct pkg_job_universe_item *next, *prev;
 };
@@ -274,13 +297,19 @@ struct pkg_repo_meta_key {
 	UT_hash_handle hh;
 };
 
+typedef enum pkg_checksum_type_e {
+	PKG_HASH_TYPE_SHA256_BASE32 = 0,
+	PKG_HASH_TYPE_SHA256_HEX,
+	PKG_HASH_TYPE_UNKNOWN
+} pkg_checksum_type_t;
+
 struct pkg_repo_meta {
 
 	char *maintainer;
 	char *source;
 
 	pkg_formats packing_format;
-	char *digest_format; /* TODO: should be enumeration */
+	pkg_checksum_type_t digest_format;
 
 	char *digests;
 	char *manifests;
@@ -293,10 +322,56 @@ struct pkg_repo_meta {
 	struct pkg_repo_meta_key *keys;
 
 	time_t eol;
+
+	int version;
+};
+
+struct pkg_repo_it_ops {
+	int (*next)(struct pkg_repo_it *it, struct pkg **pkg_p, unsigned flags);
+	void (*free)(struct pkg_repo_it *it);
+	void (*reset)(struct pkg_repo_it *it);
+};
+
+struct pkg_repo_it {
+	struct pkg_repo *repo;
+	struct pkg_repo_it_ops *ops;
+	int flags;
+	void *data;
+};
+
+struct pkg_repo_ops {
+	const char *type;
+	/* Accessing repo */
+	int (*init)(struct pkg_repo *);
+	int (*access)(struct pkg_repo *, unsigned);
+	int (*open)(struct pkg_repo *, unsigned);
+	int (*create)(struct pkg_repo *);
+	int (*close)(struct pkg_repo *, bool);
+
+	/* Updating repo */
+	int (*update)(struct pkg_repo *, bool);
+
+	/* Query repo */
+	struct pkg_repo_it * (*query)(struct pkg_repo *,
+					const char *, match_t);
+	struct pkg_repo_it * (*shlib_required)(struct pkg_repo *,
+					const char *);
+	struct pkg_repo_it * (*shlib_provided)(struct pkg_repo *,
+					const char *);
+	struct pkg_repo_it * (*search)(struct pkg_repo *, const char *, match_t,
+					pkgdb_field field, pkgdb_field sort);
+
+	int (*ensure_loaded)(struct pkg_repo *repo, struct pkg *pkg, unsigned flags);
+
+	/* Fetch package from repo */
+	void (*get_cached_name)(struct pkg_repo *, struct pkg *,
+					char *dest, size_t destlen);
+	int (*fetch_pkg)(struct pkg_repo *, struct pkg *);
 };
 
 struct pkg_repo {
-	repo_t type;
+	struct pkg_repo_ops *ops;
+
 	char *name;
 	char *url;
 	char *pubkey;
@@ -320,10 +395,11 @@ struct pkg_repo {
 
 	struct pkg_repo_meta *meta;
 
-	int (*update)(struct pkg_repo *, bool);
-
 	bool enable;
 	UT_hash_handle hh;
+
+	/* Opaque repository data */
+	void *priv;
 };
 
 /* sql helpers */
@@ -393,6 +469,7 @@ static struct pkg_key {
 	[PKG_LICENSES] = { "licenses", UCL_ARRAY },
 	[PKG_CATEGORIES] = { "catagories", UCL_ARRAY },
 	[PKG_UNIQUEID] = { "uniqueid", UCL_STRING },
+	[PKG_OLD_DIGEST] = { "olddigest", UCL_STRING },
 };
 
 int pkg_fetch_file_to_fd(struct pkg_repo *repo, const char *url,
@@ -405,6 +482,7 @@ int pkg_repo_fetch_meta(struct pkg_repo *repo, time_t *t);
 struct pkg_repo_meta *pkg_repo_meta_default(void);
 int pkg_repo_meta_load(const char *file, struct pkg_repo_meta **target);
 void pkg_repo_meta_free(struct pkg_repo_meta *meta);
+ucl_object_t * pkg_repo_meta_to_ucl(struct pkg_repo_meta *meta);
 
 typedef enum {
 	HASH_UNKNOWN,
@@ -477,8 +555,6 @@ const char* packing_format_to_string(pkg_formats format);
 int pkg_delete_files(struct pkg *pkg, unsigned force);
 int pkg_delete_dirs(struct pkgdb *db, struct pkg *pkg, bool force);
 
-int pkgdb_is_dir_used(struct pkgdb *db, const char *dir, int64_t *res);
-
 int pkg_conflicts_request_resolve(struct pkg_jobs *j);
 int pkg_conflicts_append_pkg(struct pkg *p, struct pkg_jobs *j);
 int pkg_conflicts_integrity_check(struct pkg_jobs *j);
@@ -499,29 +575,13 @@ int sql_exec(sqlite3 *, const char *, ...);
 int get_pragma(sqlite3 *, const char *sql, int64_t *res, bool silence);
 int get_sql_string(sqlite3 *, const char *sql, char **res);
 
-int pkgdb_load_deps(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_rdeps(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_files(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_dirs(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_scripts(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_options(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_mtree(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_category(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_license(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_user(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_group(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_shlib_required(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_shlib_provided(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_annotations(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_conflicts(struct pkgdb *db, struct pkg *pkg);
-int pkgdb_load_provides(struct pkgdb *db, struct pkg *pkg);
-
 int pkgdb_register_pkg(struct pkgdb *db, struct pkg *pkg, int complete, int forced);
 int pkgdb_update_shlibs_required(struct pkg *pkg, int64_t package_id, sqlite3 *s);
 int pkgdb_update_shlibs_provided(struct pkg *pkg, int64_t package_id, sqlite3 *s);
 int pkgdb_update_provides(struct pkg *pkg, int64_t package_id, sqlite3 *s);
 int pkgdb_insert_annotations(struct pkg *pkg, int64_t package_id, sqlite3 *s);
 int pkgdb_register_finale(struct pkgdb *db, int retcode);
+int pkgdb_set_pkg_digest(struct pkgdb *db, struct pkg *pkg);
 
 int pkg_register_shlibs(struct pkg *pkg, const char *root);
 
@@ -530,11 +590,29 @@ int pkg_emit_filelist(struct pkg *, FILE *);
 
 int do_extract_mtree(char *mtree, const char *prefix);
 
-int pkg_repo_update_binary_pkgs(struct pkg_repo *repo, bool force);
+int pkg_repo_binary_update(struct pkg_repo *repo, bool force);
 
 bool ucl_object_emit_sbuf(const ucl_object_t *obj, enum ucl_emitter emit_type,
     struct sbuf **buf);
 bool ucl_object_emit_file(const ucl_object_t *obj, enum ucl_emitter emit_type,
     FILE *);
+
+pkg_object* pkg_emit_object(struct pkg *pkg, short flags);
+
+/* Hash is in format <version>:<typeid>:<hexhash> */
+#define PKG_CHECKSUM_SHA256_LEN (SHA256_DIGEST_LENGTH * 2 + 10)
+#define PKG_CHECKSUM_CUR_VERSION 1
+
+int pkg_checksum_generate(struct pkg *pkg, char *dest, size_t destlen,
+	pkg_checksum_type_t type);
+
+bool pkg_checksum_is_valid(const char *cksum, size_t clen);
+pkg_checksum_type_t pkg_checksum_get_type(const char *cksum, size_t clen);
+pkg_checksum_type_t pkg_checksum_type_from_string(const char *name);
+const char* pkg_checksum_type_to_string(pkg_checksum_type_t type);
+size_t pkg_checksum_type_size(pkg_checksum_type_t type);
+int pkg_checksum_calculate(struct pkg *pkg, struct pkgdb *db);
+
+int pkg_symlink_cksum(const char *path, const char *root, char *cksum);
 
 #endif

@@ -1056,6 +1056,11 @@ pkg_solve_jobs_to_sat(struct pkg_jobs *j)
 		problem->rules_count ++;
 	}
 
+	if (problem->rules_count == 0) {
+		pkg_debug(1, "problem has no requests");
+		return (problem);
+	}
+
 	/* Parse universe */
 	HASH_ITER(hh, j->universe, un, utmp) {
 		rule = NULL;
@@ -1136,6 +1141,13 @@ pkg_solve_insert_res_job (struct pkg_solve_variable *var,
 		else if (!cur_var->to_install && cur_var->unit->pkg->type == PKG_INSTALLED) {
 			del_var = cur_var;
 			seen_del ++;
+		}
+		else if (cur_var->to_install && cur_var->unit->reinstall) {
+			pkg_set(cur_var->unit->pkg, PKG_REASON, "forced reinstall");
+			add_var = cur_var;
+			seen_add ++;
+			del_var = cur_var;
+			seen_del = 1;
 		}
 	}
 	if (seen_add > 1 || seen_del > 1) {

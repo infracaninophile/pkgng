@@ -277,7 +277,6 @@ static int
 pkg_vset(struct pkg *pkg, va_list ap)
 {
 	int attr;
-	struct pkg_repo *r;
 	char *buf = NULL;
 	const char *data;
 	const char *str;
@@ -299,16 +298,12 @@ pkg_vset(struct pkg *pkg, va_list ap)
 				data = buf;
 			}
 
-			if (attr == PKG_REPOURL) {
-				r = pkg_repo_find_ident(str);
-				if (r == NULL)
-					break;
-				data = pkg_repo_url(r);
-			}
-
-			ucl_object_replace_key(pkg->fields,
-			    ucl_object_fromstring_common(data, strlen(data), 0),
-			    pkg_keys[attr].name, strlen(pkg_keys[attr].name), false);
+			if (data == NULL)
+				ucl_object_delete_key(pkg->fields, pkg_keys[attr].name);
+			else
+				ucl_object_replace_key(pkg->fields,
+				    ucl_object_fromstring_common(data, strlen(data), 0),
+				    pkg_keys[attr].name, strlen(pkg_keys[attr].name), false);
 
 			if (buf != NULL)
 				free(buf);
@@ -1487,7 +1482,7 @@ pkg_test_filesum(struct pkg *pkg)
 	const char *sum;
 	struct stat	 st;
 	char sha256[SHA256_DIGEST_LENGTH * 2 + 1];
-	int rc = EPKG_OK, ret;
+	int rc = EPKG_OK;
 
 	assert(pkg != NULL);
 
@@ -1500,12 +1495,8 @@ pkg_test_filesum(struct pkg *pkg)
 				return (EPKG_FATAL);
 			}
 			if (S_ISLNK(st.st_mode)) {
-				char linkbuf[MAXPATHLEN];
-				if ((ret = readlink(path, linkbuf, sizeof(linkbuf))) == -1) {
-					pkg_emit_errno("pkg_create_from_dir", "readlink failed");
+				if (pkg_symlink_cksum(path, NULL, sha256) != EPKG_OK)
 					return (EPKG_FATAL);
-				}
-				sha256_buf(linkbuf, ret, sha256);
 			}
 			else {
 				if (sha256_file(path, sha256) != EPKG_OK)
@@ -1551,9 +1542,8 @@ pkg_recompute(struct pkgdb *db, struct pkg *pkg)
 				}
 			}
 
-			/* special case for hardlinks */
 			if (st.st_nlink > 1)
-				regular = is_hardlink(hl, &st);
+				regular = !check_for_hardlink(hl, &st);
 
 			if (regular)
 				flatsize += st.st_size;
@@ -1561,6 +1551,7 @@ pkg_recompute(struct pkgdb *db, struct pkg *pkg)
 		if (strcmp(sha256, sum) != 0)
 			pkgdb_file_set_cksum(db, f, sha256);
 	}
+	HASH_FREE(hl, free);
 
 	pkg_get(pkg, PKG_FLATSIZE, &oldflatsize);
 	if (flatsize != oldflatsize)

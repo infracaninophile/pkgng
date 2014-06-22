@@ -112,16 +112,20 @@ pipeevent(struct pkg_event *ev)
 		    ev->e_upd_remove.total
 		    );
 		break;
-	case PKG_EVENT_FETCHING:
-		sbuf_printf(msg, "{ \"type\": \"INFO_FETCH\", "
+	case PKG_EVENT_FETCH_BEGIN:
+		sbuf_printf(msg, "{ \"type\": \"INFO_FETCH_BEGIN\", "
 		    "\"data\": { "
-		    "\"url\": \"%s\", "
-		    "\"fetched\": %" PRId64 ", "
-		    "\"total\": %" PRId64
+		    "\"url\": \"%s\" "
 		    "}}",
-		    sbuf_json_escape(buf, ev->e_fetching.url),
-		    ev->e_fetching.done,
-		    ev->e_fetching.total
+		    sbuf_json_escape(buf, ev->e_fetching.url)
+		    );
+		break;
+	case PKG_EVENT_FETCH_FINISHED:
+		sbuf_printf(msg, "{ \"type\": \"INFO_FETCH_FINISHED\", "
+		    "\"data\": { "
+		    "\"url\": \"%s\" "
+		    "}}",
+		    sbuf_json_escape(buf, ev->e_fetching.url)
 		    );
 		break;
 	case PKG_EVENT_INSTALL_BEGIN:
@@ -367,6 +371,9 @@ pipeevent(struct pkg_event *ev)
 		sbuf_printf(msg, "{ \"text\": \"%s\" } ] }}",
 			ev->e_query_select.items[i]);
 		break;
+	case PKG_EVENT_BACKUP:
+	case PKG_EVENT_RESTORE:
+		break;
 	default:
 		break;
 	}
@@ -469,15 +476,23 @@ pkg_emit_already_installed(struct pkg *p)
 }
 
 void
-pkg_emit_fetching(const char *url, off_t total, off_t done, time_t elapsed)
+pkg_emit_fetch_begin(const char *url)
 {
 	struct pkg_event ev;
 
-	ev.type = PKG_EVENT_FETCHING;
+	ev.type = PKG_EVENT_FETCH_BEGIN;
 	ev.e_fetching.url = url;
-	ev.e_fetching.total = total;
-	ev.e_fetching.done = done;
-	ev.e_fetching.elapsed = elapsed;
+
+	pkg_emit_event(&ev);
+}
+
+void
+pkg_emit_fetch_finished(const char *url)
+{
+	struct pkg_event ev;
+
+	ev.type = PKG_EVENT_FETCH_FINISHED;
+	ev.e_fetching.url = url;
 
 	pkg_emit_event(&ev);
 }
@@ -876,4 +891,56 @@ pkg_debug(int level, const char *fmt, ...)
 
 	pkg_emit_event(&ev);
 	free(ev.e_debug.msg);
+}
+
+void
+pkg_emit_backup(void)
+{
+	struct pkg_event ev;
+
+	ev.type = PKG_EVENT_BACKUP;
+
+	pkg_emit_event(&ev);
+}
+
+void
+pkg_emit_restore(void)
+{
+	struct pkg_event ev;
+
+	ev.type = PKG_EVENT_RESTORE;
+
+	pkg_emit_event(&ev);
+}
+
+void
+pkg_emit_progress_start(const char *fmt, ...)
+{
+	struct pkg_event ev;
+	va_list ap;
+
+	ev.type = PKG_EVENT_PROGRESS_START;
+	if (fmt != NULL) {
+		va_start(ap, fmt);
+		vasprintf(&ev.e_progress_start.msg, fmt, ap);
+		va_end(ap);
+	} else {
+		ev.e_progress_start.msg = NULL;
+	}
+
+	pkg_emit_event(&ev);
+	free(ev.e_progress_start.msg);
+}
+
+void
+pkg_emit_progress_tick(int64_t current, int64_t total)
+{
+	struct pkg_event ev;
+
+	ev.type = PKG_EVENT_PROGRESS_TICK;
+	ev.e_progress_tick.current = current;
+	ev.e_progress_tick.total = total;
+
+	pkg_emit_event(&ev);
+
 }

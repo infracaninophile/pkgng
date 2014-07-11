@@ -1026,6 +1026,7 @@ pkgdb_ensure_loaded_sqlite(sqlite3 *sqlite, struct pkg *pkg, unsigned flags)
 			ret = load_on_flag[i].load(sqlite, pkg);
 			if (ret != EPKG_OK)
 				return (ret);
+			pkg->flags |= load_on_flag[i].flag;
 		}
 	}
 
@@ -1047,13 +1048,11 @@ pkgdb_ensure_loaded(struct pkgdb *db, struct pkg *pkg, unsigned flags)
 			if (cur->repo == pkg->repo) {
 				if (cur->repo->ops->ensure_loaded) {
 					ret = cur->repo->ops->ensure_loaded(cur->repo, pkg, flags);
-					if (ret != EPKG_OK)
-						return (EPKG_FATAL);
+					return (ret);
 				}
 			}
 		}
 	}
 
-	/* Not reached */
 	return (EPKG_FATAL);
 }

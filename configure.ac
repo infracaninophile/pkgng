@@ -86,6 +86,8 @@ AC_CHECK_HEADERS_ONCE([sys/types.h])
 AC_CHECK_HEADERS_ONCE([sys/stat.h])
 AC_CHECK_HEADERS_ONCE([sys/param.h])
 AC_CHECK_HEADERS_ONCE([sys/mman.h])
+AC_CHECK_HEADERS_ONCE([sys/elf_common.h])
+AC_CHECK_HEADERS_ONCE([link.h])
 AC_CHECK_HEADERS_ONCE([stdlib.h])
 AC_CHECK_HEADERS_ONCE([stddef.h])
 AC_CHECK_HEADERS_ONCE([stdarg.h])
@@ -100,6 +102,7 @@ AC_CHECK_HEADERS_ONCE([libgen.h])
 AC_CHECK_HEADERS_ONCE([stdio.h])
 AC_CHECK_HEADERS_ONCE([float.h])
 AC_CHECK_HEADERS_ONCE([math.h])
+AC_CHECK_HEADERS_ONCE([osreldate.h])
 
 AC_CHECK_HEADER([regex.h], [
 	AC_DEFINE(HAVE_REGEX_H, 1, [Define to 1 if you have the <regex.h> header file.])
@@ -136,6 +139,18 @@ AC_SUBST([GIT_HEAD])
 AC_DEFINE_UNQUOTED([GIT_HEAD], $GIT_HEAD)
 AC_DEFINE([PKG_API], [api_ver])
 
+AC_RUN_IFELSE(
+  [AC_LANG_SOURCE(
+    [[
+    #include <sys/types.h>
+    #include <sys/socket.h>
+    int main() { return socket(AF_LOCAL, SOCK_SEQPACKET, 0) == -1 ? -1 : 0; }
+    ]]
+  )],
+  [AC_DEFINE([HAVE_SEQPACKET], 1, [Define to 1 if you have SOCK_SEQPACKET working])]
+)
+
+AC_SUBST([HAVE_SEQPACKET])
 
 AC_SEARCH_LIBS([lzma_version_string], [lzma], [], [
   AC_MSG_ERROR([unable to find the liblzma])
@@ -160,17 +175,26 @@ AC_SEARCH_LIBS([jail_getid], [jail], [
 	LIBJAIL_LIB="-ljail"
 	], [])
 
-AC_CHECK_HEADER([gelf.h], [
-	AC_DEFINE(HAVE_GELF_H, 1, [Define to 1 if you have the <gelf.h> header file.])
-	AC_CHECK_LIB(elf, gelf_getehdr, [
-		AC_DEFINE(HAVE_LIBELF, 1, [Define to 1 if you have the 'elf' library (-lelf).])
-		LIBELF_LIB="-lelf"
-	])
-], [
-	LIBELF_LIB="\$(top_builddir)/external/libelf.la"
-	LIBELF_BUNDLED="libelf.la"
-	LIBELF_INCLUDE="-I\$(top_srcdir)/external/libelf"
-])
+LIBELF_LIB="\$(top_builddir)/external/libelf.la"
+LIBELF_BUNDLED="libelf.la"
+LIBELF_INCLUDE="-I\$(top_srcdir)/external/libelf"
+
+AC_CHECK_HEADERS([gelf.h libelf.h], [
+	AC_CHECK_TYPES([Elf_Note], [
+		AC_DEFINE(HAVE_GELF_H, 1, [Define to 1 if you have the <gelf.h> header file.])
+		AC_CHECK_LIB(elf, gelf_getehdr, [
+			AC_DEFINE(HAVE_LIBELF, 1, [Define to 1 if you have the 'elf' library (-lelf).])
+			LIBELF_LIB="-lelf"
+			LIBELF_BUNDLED=
+			LIBELF_INCLUDE=
+		]) dnl AC_CHECK_LIB
+	], dnl AC_CHECK_TYPES
+	[], AC_LANG_SOURCE(
+	[[
+#include "gelf.h"
+#include "libelf.h"
+	]])
+	)])
 
 AC_CHECK_HEADER([sys/sbuf.h], [
 	AC_DEFINE(HAVE_SYS_SBUF_H, 1, [Define to 1 if you have the <sys/sbuf.h> header file.])

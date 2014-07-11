@@ -345,7 +345,7 @@ progress_alarm_handler(int signo)
 static void
 stop_progressbar(void)
 {
-	if (progress_alarm)
+	if (progress_started)
 		putchar('\n');
 
 	last_progress_percent = -1;
@@ -366,7 +366,7 @@ draw_progressbar(int64_t current, int64_t total)
 	int hours, minutes, seconds;
 	int r = 0;
 
-	percent = (total != 0) ? (current * 100 / total) : 100;
+	percent = (total != 0) ? (current * 100. / total) : 100;
 
 	if (progress_started && (percent != last_progress_percent || current == total)) {
 		last_progress_percent = percent;
@@ -402,7 +402,7 @@ draw_progressbar(int64_t current, int64_t total)
 				printf(" %*s", (int)sizeof(buf), buf);
 
 				format_rate_SI(buf, sizeof(buf), transferred);
-				printf(" %s/s", buf);
+				printf(" %s/s ", buf);
 
 				if (!transferred)
 					stalled += elapsed;
@@ -464,6 +464,7 @@ draw_progressbar(int64_t current, int64_t total)
 
 		memset(&sa, 0, sizeof(sa));
 		sa.sa_handler = progress_alarm_handler;
+		sa.sa_flags = SA_RESTART;
 		sigemptyset(&sa.sa_mask);
 		sigaction(SIGALRM, &sa, NULL);
 		alarm(1);
@@ -578,21 +579,15 @@ event_callback(void *data, struct pkg_event *ev)
 	case PKG_EVENT_INTEGRITYCHECK_CONFLICT:
 		if (*debug == 0)
 			break;
-		printf("\nConflict found on path %s between %s-%s(%s) and ",
+		printf("\nConflict found on path %s between %s and ",
 		    ev->e_integrity_conflict.pkg_path,
-		    ev->e_integrity_conflict.pkg_name,
-		    ev->e_integrity_conflict.pkg_version,
-		    ev->e_integrity_conflict.pkg_origin);
+		    ev->e_integrity_conflict.pkg_uid);
 		cur_conflict = ev->e_integrity_conflict.conflicts;
 		while (cur_conflict) {
 			if (cur_conflict->next)
-				printf("%s-%s(%s), ", cur_conflict->name,
-				    cur_conflict->version,
-				    cur_conflict->origin);
+				printf("%s, ", cur_conflict->uid);
 			else
-				printf("%s-%s(%s)", cur_conflict->name,
-				    cur_conflict->version,
-				    cur_conflict->origin);
+				printf("%s", cur_conflict->uid);
 
 			cur_conflict = cur_conflict->next;
 		}
@@ -764,9 +759,9 @@ event_callback(void *data, struct pkg_event *ev)
 			last_tick = 0;
 			begin = last_update = time(NULL);
 			bytes_per_second = 0;
-			if (isatty(STDOUT_FILENO)) {
+
+			if (isatty(STDOUT_FILENO))
 				progress_started = true;
-			}
 		}
 		break;
 	case PKG_EVENT_PROGRESS_TICK:

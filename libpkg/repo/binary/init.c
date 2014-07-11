@@ -97,16 +97,14 @@ pkg_repo_binary_get_user_version(sqlite3 *sqlite, int *reposcver)
 static int
 pkg_repo_binary_set_version(sqlite3 *sqlite, int reposcver)
 {
-	int		 retcode = EPKG_OK;
-	char		*errmsg;
-	const char	*sql = "PRAGMA user_version = %d;" ;
+	const char	*sql = "PRAGMA user_version = %d;";
 
-	if (sqlite3_exec(sqlite, sql, NULL, NULL, &errmsg) != SQLITE_OK) {
-		pkg_emit_error("sqlite: %s", errmsg);
-		sqlite3_free(errmsg);
-		retcode = EPKG_FATAL;
+	if (sql_exec(sqlite, sql, reposcver) != EPKG_OK) {
+		ERROR_SQLITE(sqlite, sql);
+		return (EPKG_FATAL);
 	}
-	return (retcode);
+
+	return (EPKG_OK);
 }
 
 static int
@@ -303,6 +301,15 @@ pkg_repo_binary_open(struct pkg_repo *repo, unsigned mode)
 
 	sqlite3_initialize();
 	dbdir = pkg_object_string(pkg_config_get("PKG_DBDIR"));
+
+	snprintf(filepath, sizeof(filepath), "%s/%s.meta",
+		dbdir, pkg_repo_name(repo));
+
+	/* Open metafile */
+	if (access(filepath, R_OK) != -1) {
+		if (pkg_repo_meta_load(filepath, &repo->meta) != EPKG_OK)
+			return (EPKG_FATAL);
+	}
 
 	snprintf(filepath, sizeof(filepath), "%s/%s",
 		dbdir, pkg_repo_binary_get_filename(pkg_repo_name(repo)));

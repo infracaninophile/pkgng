@@ -2,6 +2,7 @@
  * Copyright (c) 2011-2014 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
  * Copyright (c) 2014 Matthew Seaman <matthew@FreeBSD.org>
+ * Copyright (c) 2014 Vsevolod Stakhov <vsevolod@FreeBSD.org>
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
@@ -26,6 +27,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "pkg_config.h"
+
 #include <assert.h>
 #include <sys/socket.h>
 #include <sys/utsname.h>
@@ -37,7 +40,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#ifdef HAVE_OSRELDATE_H
 #include <osreldate.h>
+#endif
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,7 +66,7 @@
 #define TEXT(X)		#X
 #define INDEXFILE	"INDEX-" STRINGIFY(OSMAJOR)
 #else
-#define INDEXFILE	INDEX
+#define INDEXFILE	"INDEX"
 #endif
 
 int eventpipe = -1;
@@ -313,6 +318,7 @@ static size_t c_size = NELEM(c);
 
 static struct pkg_repo* pkg_repo_new(const char *name,
 	const char *url, const char *type);
+static void pkg_repo_free(struct pkg_repo *r);
 
 static void
 connect_evpipe(const char *evpipe) {
@@ -409,9 +415,22 @@ add_repo(const ucl_object_t *obj, struct pkg_repo *r, const char *rname)
 	pkg_debug(1, "PkgConfig: parsing repository object %s", rname);
 
 	enabled = ucl_object_find_key(obj, "enabled");
-	if (enabled != NULL && !ucl_object_toboolean(enabled)) {
-		pkg_debug(1, "PkgConfig: skipping disabled repo %s", rname);
-		return;
+	if (enabled != NULL) {
+		enable = ucl_object_toboolean(enabled);
+		if (!enable && r == NULL) {
+			pkg_debug(1, "PkgConfig: skipping disabled repo %s", rname);
+			return;
+		}
+		else if (!enable && r != NULL) {
+			/*
+			 * We basically want to remove the existing repo r and
+			 * forget all stuff parsed
+			 */
+			pkg_debug(1, "PkgConfig: disabling repo %s", rname);
+			HASH_DEL(repos, r);
+			pkg_repo_free(r);
+			return;
+		}
 	}
 
 	while ((cur = ucl_iterate_object(obj, &it, true))) {

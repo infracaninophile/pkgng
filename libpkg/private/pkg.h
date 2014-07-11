@@ -31,6 +31,7 @@
 #define _PKG_PRIVATE_H
 
 #include <sys/param.h>
+#include <sys/cdefs.h>
 #include <sys/sbuf.h>
 #include <sys/types.h>
 
@@ -242,6 +243,12 @@ struct pkg_job_provide {
 	UT_hash_handle hh;
 };
 
+struct pkg_job_replace {
+	char *new_uid;
+	char *old_uid;
+	struct pkg_job_replace *next;
+};
+
 struct pkg_jobs {
 	struct pkg_job_universe_item *universe;
 	struct pkg_job_request	*request_add;
@@ -250,12 +257,14 @@ struct pkg_jobs {
 	struct pkg_job_seen *seen;
 	struct pkgdb	*db;
 	struct pkg_job_provide *provides;
+	struct pkg_job_replace *uid_replaces;
 	pkg_jobs_t	 type;
 	pkg_flags	 flags;
 	int		 solved;
 	int count;
 	int total;
 	int conflicts_registered;
+	bool need_fetch;
 	const char *	 reponame;
 	struct job_pattern *patterns;
 };
@@ -303,6 +312,8 @@ typedef enum pkg_checksum_type_e {
 	PKG_HASH_TYPE_UNKNOWN
 } pkg_checksum_type_t;
 
+static const char repo_meta_file[] = "meta";
+
 struct pkg_repo_meta {
 
 	char *maintainer;
@@ -312,9 +323,15 @@ struct pkg_repo_meta {
 	pkg_checksum_type_t digest_format;
 
 	char *digests;
+	char *digests_archive;
 	char *manifests;
+	char *manifests_archive;
+	char *filesite;
+	char *filesite_archive;
 	char *conflicts;
+	char *conflicts_archive;
 	char *fulldb;
+	char *fulldb_archive;
 
 	char *source_identifier;
 	int64_t revision;
@@ -360,6 +377,8 @@ struct pkg_repo_ops {
 					const char *);
 	struct pkg_repo_it * (*search)(struct pkg_repo *, const char *, match_t,
 					pkgdb_field field, pkgdb_field sort);
+
+	int64_t (*stat)(struct pkg_repo *, pkg_stats_t type);
 
 	int (*ensure_loaded)(struct pkg_repo *repo, struct pkg *pkg, unsigned flags);
 
@@ -435,42 +454,10 @@ int pkg_delete(struct pkg *pkg, struct pkgdb *db, unsigned flags);
 #define PKG_DELETE_NOSCRIPT (1<<2)
 #define PKG_DELETE_CONFLICT (1<<3)
 
-static struct pkg_key {
+extern struct pkg_key {
 	const char *name;
 	int type;
-} pkg_keys [] = {
-	[PKG_ORIGIN] = { "origin", UCL_STRING },
-	[PKG_NAME] = { "name", UCL_STRING },
-	[PKG_VERSION] = { "version", UCL_STRING },
-	[PKG_COMMENT] = { "comment", UCL_STRING },
-	[PKG_DESC] = { "desc", UCL_STRING },
-	[PKG_MTREE] = { "mtree", UCL_STRING },
-	[PKG_MESSAGE] = { "message", UCL_STRING },
-	[PKG_ARCH] = { "arch", UCL_STRING },
-	[PKG_MAINTAINER] = { "maintainer", UCL_STRING },
-	[PKG_WWW] = { "www", UCL_STRING },
-	[PKG_PREFIX] = { "prefix", UCL_STRING },
-	[PKG_REPOPATH] = { "repopath", UCL_STRING },
-	[PKG_CKSUM] = { "sum", UCL_STRING },
-	[PKG_OLD_VERSION] = { "oldversion", UCL_STRING },
-	[PKG_REPONAME] = { "reponame", UCL_STRING },
-	[PKG_REPOURL] = { "repourl", UCL_STRING },
-	[PKG_DIGEST] = { "digest", UCL_STRING },
-	[PKG_REASON] = { "reason", UCL_STRING },
-	[PKG_FLATSIZE] = { "flatsize", UCL_INT },
-	[PKG_OLD_FLATSIZE] = { "oldflatsize", UCL_INT },
-	[PKG_PKGSIZE] = { "pkgsize", UCL_INT },
-	[PKG_LICENSE_LOGIC] = { "licenselogic", UCL_INT },
-	[PKG_AUTOMATIC] = { "automatic", UCL_BOOLEAN },
-	[PKG_LOCKED] = { "locked", UCL_BOOLEAN },
-	[PKG_ROWID] = { "rowid", UCL_INT },
-	[PKG_TIME] = { "time", UCL_INT },
-	[PKG_ANNOTATIONS] = { "annotations", UCL_OBJECT },
-	[PKG_LICENSES] = { "licenses", UCL_ARRAY },
-	[PKG_CATEGORIES] = { "catagories", UCL_ARRAY },
-	[PKG_UNIQUEID] = { "uniqueid", UCL_STRING },
-	[PKG_OLD_DIGEST] = { "olddigest", UCL_STRING },
-};
+} pkg_keys[PKG_NUM_FIELDS];
 
 int pkg_fetch_file_to_fd(struct pkg_repo *repo, const char *url,
 		int dest, time_t *t);
@@ -483,6 +470,7 @@ struct pkg_repo_meta *pkg_repo_meta_default(void);
 int pkg_repo_meta_load(const char *file, struct pkg_repo_meta **target);
 void pkg_repo_meta_free(struct pkg_repo_meta *meta);
 ucl_object_t * pkg_repo_meta_to_ucl(struct pkg_repo_meta *meta);
+bool pkg_repo_meta_is_special_file(const char *file, struct pkg_repo_meta *meta);
 
 typedef enum {
 	HASH_UNKNOWN,
@@ -506,6 +494,8 @@ int pkg_delete_user_group(struct pkgdb *db, struct pkg *pkg);
 
 int pkg_open2(struct pkg **p, struct archive **a, struct archive_entry **ae,
 	      const char *path, struct pkg_manifest_key *keys, int flags, int fd);
+
+int pkg_validate(struct pkg *pkg);
 
 void pkg_list_free(struct pkg *, pkg_list);
 
@@ -600,7 +590,7 @@ bool ucl_object_emit_file(const ucl_object_t *obj, enum ucl_emitter emit_type,
 pkg_object* pkg_emit_object(struct pkg *pkg, short flags);
 
 /* Hash is in format <version>:<typeid>:<hexhash> */
-#define PKG_CHECKSUM_SHA256_LEN (SHA256_DIGEST_LENGTH * 2 + 10)
+#define PKG_CHECKSUM_SHA256_LEN (SHA256_DIGEST_LENGTH * 2 + sizeof("100") * 2 + 2)
 #define PKG_CHECKSUM_CUR_VERSION 1
 
 int pkg_checksum_generate(struct pkg *pkg, char *dest, size_t destlen,

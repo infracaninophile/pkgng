@@ -359,13 +359,82 @@ pkg_repo_binary_ensure_loaded(struct pkg_repo *repo,
 	struct pkg *pkg, unsigned flags)
 {
 	sqlite3 *sqlite = PRIV_GET(repo);
+	struct pkg_manifest_key *keys = NULL;
+	struct pkg *cached = NULL;
+	char path[MAXPATHLEN];
 
-	if (flags & (PKG_LOAD_FILES|PKG_LOAD_DIRS|PKG_LOAD_ANNOTATIONS)) {
+	if (flags & (PKG_LOAD_FILES|PKG_LOAD_DIRS)) {
 		/*
-		 * At the moment, we have no such information in repo
+		 * Try to get that information from fetched package in cache
 		 */
-		return (EPKG_FATAL);
+		pkg_manifest_keys_new(&keys);
+		pkg_repo_cached_name(pkg, path, sizeof(path));
+
+		if (pkg_open(&cached, path, keys, PKG_OPEN_TRY) != EPKG_OK)
+			return (EPKG_FATAL);
+
+		/* Now move required elements to the provided package */
+		pkg->files = cached->files;
+		pkg->dirs = cached->dirs;
+		cached->files = NULL;
+		cached->dirs = NULL;
+
+		pkg_free(cached);
+		pkg->flags |= (PKG_LOAD_FILES|PKG_LOAD_DIRS);
 	}
 
 	return (pkgdb_ensure_loaded_sqlite(sqlite, pkg, flags));
+}
+
+
+int64_t
+pkg_repo_binary_stat(struct pkg_repo *repo, pkg_stats_t type)
+{
+	sqlite3 *sqlite = PRIV_GET(repo);
+	sqlite3_stmt	*stmt = NULL;
+	int64_t		 stats = 0;
+	struct sbuf	*sql = NULL;
+	int		 ret;
+
+	sql = sbuf_new_auto();
+
+	switch(type) {
+	case PKG_STATS_LOCAL_COUNT:
+		goto out;
+		break;
+	case PKG_STATS_LOCAL_SIZE:
+		goto out;
+		break;
+	case PKG_STATS_REMOTE_UNIQUE:
+		sbuf_printf(sql, "SELECT COUNT(id) FROM main.packages;");
+		break;
+	case PKG_STATS_REMOTE_COUNT:
+		sbuf_printf(sql, "SELECT COUNT(id) FROM main.packages;");
+		break;
+	case PKG_STATS_REMOTE_SIZE:
+		sbuf_printf(sql, "SELECT SUM(flatsize) FROM main.packages;");
+		break;
+	case PKG_STATS_REMOTE_REPOS:
+		goto out;
+		break;
+	}
+
+	sbuf_finish(sql);
+	pkg_debug(4, "binary_repo: running '%s'", sbuf_data(sql));
+	ret = sqlite3_prepare_v2(sqlite, sbuf_data(sql), -1, &stmt, NULL);
+	if (ret != SQLITE_OK) {
+		ERROR_SQLITE(sqlite, sbuf_data(sql));
+		goto out;
+	}
+
+	while (sqlite3_step(stmt) != SQLITE_DONE) {
+		stats = sqlite3_column_int64(stmt, 0);
+	}
+
+out:
+	sbuf_free(sql);
+	if (stmt != NULL)
+		sqlite3_finalize(stmt);
+
+	return (stats);
 }

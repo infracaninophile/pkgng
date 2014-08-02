@@ -76,7 +76,7 @@ exec_upgrade(int argc, char **argv)
 
 	nbactions = nbdone = 0;
 
-	while ((ch = getopt_long(argc, argv, "CfFgiInqr:Uxy", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "+CfFgiInqr:Uxy", longopts, NULL)) != -1) {
 		switch (ch) {
 		case 'C':
 			pkgdb_set_case_sensitivity(true);
@@ -150,7 +150,7 @@ exec_upgrade(int argc, char **argv)
 	
 	/* first update the remote repositories if needed */
 	if (auto_update &&
-	    (updcode = pkgcli_update(false, reponame)) != EPKG_OK)
+	    (updcode = pkgcli_update(false, false, reponame)) != EPKG_OK)
 		return (updcode);
 
 	if (pkgdb_open_all(&db, PKGDB_REMOTE, reponame) != EPKG_OK)

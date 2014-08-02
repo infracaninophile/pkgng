@@ -311,6 +311,12 @@ static struct config_entry c[] = {
 		"NO",
 		"Profile sqlite queries"
 	},
+	{
+		PKG_INT,
+		"WORKERS_COUNT",
+		"0",
+		"How many workers are used for pkg-repo (hw.ncpu if 0)"
+	},
 };
 
 static bool parsed = false;
@@ -593,6 +599,8 @@ load_repo_file(const char *repofile)
 	}
 
 	obj = ucl_parser_get_object(p);
+	if (obj == NULL)
+		return;
 
 	if (obj->type == UCL_OBJECT)
 		walk_repo_obj(obj, repofile);
@@ -771,7 +779,7 @@ pkg_init(const char *path, const char *reposdir)
 	obj = NULL;
 	if (!ucl_parser_add_file(p, path)) {
 		if (errno != ENOENT)
-			pkg_emit_error("%s", ucl_parser_get_error(p));
+			pkg_emit_error("Invalid configuration file: %s", ucl_parser_get_error(p));
 	} else {
 		obj = ucl_parser_get_object(p);
 
@@ -796,14 +804,14 @@ pkg_init(const char *path, const char *reposdir)
 
 		if (ncfg == NULL)
 			ncfg = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(ncfg, ucl_object_ref(cur), key, strlen(key), false);
+		ucl_object_insert_key(ncfg, ucl_object_copy(cur), sbuf_data(ukey), sbuf_len(ukey), true);
 	}
 
 	if (ncfg != NULL) {
 		it = NULL;
 		while (( cur = ucl_iterate_object(ncfg, &it, true))) {
 			key = ucl_object_key(cur);
-			ucl_object_replace_key(config, ucl_object_ref(cur), key, strlen(key), false);
+			ucl_object_replace_key(config, ucl_object_ref(cur), key, strlen(key), true);
 		}
 		ucl_object_unref(ncfg);
 	}
@@ -895,7 +903,7 @@ pkg_init(const char *path, const char *reposdir)
 		it = NULL;
 		while (( cur = ucl_iterate_object(ncfg, &it, true))) {
 			key = ucl_object_key(cur);
-			ucl_object_replace_key(config, ucl_object_ref(cur), key, strlen(key), false);
+			ucl_object_replace_key(config, ucl_object_ref(cur), key, strlen(key), true);
 		}
 		ucl_object_unref(ncfg);
 	}
@@ -915,8 +923,9 @@ pkg_init(const char *path, const char *reposdir)
 
 	it = NULL;
 	object = ucl_object_find_key(config, "PKG_ENV");
-	while ((cur = ucl_iterate_object(o, &it, true))) {
+	while ((cur = ucl_iterate_object(object, &it, true))) {
 		evkey = ucl_object_key(cur);
+		pkg_debug(1, "Setting env var: %s", evkey);
 		if (evkey != NULL && evkey[0] != '\0')
 			setenv(evkey, ucl_object_tostring_forced(cur), 1);
 	}

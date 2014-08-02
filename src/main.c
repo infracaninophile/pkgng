@@ -222,6 +222,9 @@ exec_help(int argc, char **argv)
 	bool plugins_enabled = false;
 	struct plugcmd *c;
 	unsigned int i;
+	const pkg_object *all_aliases;
+	const pkg_object *alias;
+	pkg_iter it = NULL;
 
 	if ((argc != 2) || (strcmp("help", argv[1]) == 0)) {
 		usage_help();
@@ -262,6 +265,15 @@ exec_help(int argc, char **argv)
 	} else if (strcmp(argv[1], "pkg.conf") == 0) {
 		system("/usr/bin/man 5 pkg.conf");
 		return (0);
+	}
+
+	/* Try aliases */
+	all_aliases = pkg_config_get("ALIAS");
+	while ((alias = pkg_object_iterate(all_aliases, &it))) {
+		if (strcmp(argv[1], pkg_object_key(alias)) == 0) {
+			printf("`%s` is an alias to `%s`\n", argv[1], pkg_object_string(alias));
+			return (0);
+		}
 	}
 
 	/* Command name not found */
@@ -451,8 +463,8 @@ start_process_worker(void)
 				break;
 			if (WIFSIGNALED(status)) {
 				/* Process got some terminating signal, hence stop the loop */
-				fprintf(stderr, "Child process pid=%d terminated abnormally by signal: %d\n",
-						(int)child_pid, WTERMSIG(status));
+				fprintf(stderr, "Child process pid=%d terminated abnormally: %s\n",
+						(int)child_pid, strsignal (WTERMSIG(status)));
 				ret = -(WTERMSIG(status));
 				break;
 			}
@@ -645,7 +657,6 @@ main(int argc, char **argv)
 	const char	 *conffile = NULL;
 	const char	 *reposdir = NULL;
 	char		**save_argv;
-	int		  newargvl;
 	int		  j;
 
 	struct option longopts[] = {
@@ -666,8 +677,6 @@ main(int argc, char **argv)
 	/* Set stdout unbuffered */
 	setvbuf(stdout, NULL, _IONBF, 0);
 
-	newargvl = 0;
-
 	if (argc < 2)
 		usage(NULL, NULL, stderr, PKG_USAGE_INVALID_ARGUMENTS, "not enough arguments");
 
@@ -681,9 +690,9 @@ main(int argc, char **argv)
 		err(EX_SOFTWARE, "setenv() failed");
 
 #ifdef HAVE_LIBJAIL
-	while ((ch = getopt_long(argc, argv, "dj:c:C:R:lNvo:", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "+dj:c:C:R:lNvo:", longopts, NULL)) != -1) {
 #else
-	while ((ch = getopt_long(argc, argv, "dc:C:R:lNvo:", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "+dc:C:R:lNvo:", longopts, NULL)) != -1) {
 #endif
 		switch (ch) {
 		case 'd':
@@ -743,6 +752,11 @@ main(int argc, char **argv)
 	if (debug == 0 && version == 0)
 		start_process_worker();
 
+#ifdef HAVE_ARC4RANDOM
+	/* Ensure that random is stirred after a possible fork */
+	arc4random_stir();
+#endif
+
 	if (jail_str != NULL && chroot_path != NULL) {
 		usage(conffile, reposdir, stderr, PKG_USAGE_INVALID_ARGUMENTS,
 				"-j and -c cannot be used at the same time!\n");
@@ -768,7 +782,7 @@ main(int argc, char **argv)
 #endif
 
 	if (!pkg_compiled_for_same_os_major())
-		warnx("Major version upgrade detected.  Running \"pkg_static "
+		warnx("Major version upgrade detected.  Running \"pkg-static "
 		      "install -f pkg\" recommended");
 
 	if (pkg_init(conffile, reposdir) != EPKG_OK)

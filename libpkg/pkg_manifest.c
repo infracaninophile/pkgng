@@ -1,6 +1,7 @@
 /*-
  * Copyright (c) 2011-2014 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
+ * Copyright (c) 2013-2014 Vsevolod Stakhov <vsevolod@FreeBSD.org>
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
@@ -71,7 +72,7 @@ static int pkg_set_dirs_from_object(struct pkg *, const ucl_object_t *);
 static struct manifest_key {
 	const char *key;
 	int type;
-	enum ucl_type valid_type;
+	uint16_t valid_type;
 	int (*parse_data)(struct pkg *, const ucl_object_t *, int);
 } manifest_keys[] = {
 	{ "annotations",         PKG_ANNOTATIONS,         UCL_OBJECT, pkg_obj},
@@ -116,7 +117,7 @@ static struct manifest_key {
 };
 
 struct dataparser {
-	enum ucl_type type;
+	uint16_t type;
 	int (*parse_data)(struct pkg *, const ucl_object_t *, int);
 	UT_hash_handle hh;
 };
@@ -456,8 +457,11 @@ pkg_obj(struct pkg *pkg, const ucl_object_t *obj, int attr)
 			if (cur->type != UCL_STRING && cur->type != UCL_BOOLEAN)
 				pkg_emit_error("Skipping malformed option %s",
 				    key);
-			else
-				pkg_addoption(pkg, key, ucl_object_tostring_forced(cur));
+			else if (cur->type == UCL_STRING) {
+				pkg_addoption(pkg, key, ucl_object_tostring(cur));
+			} else {
+				pkg_addoption(pkg, key, ucl_object_toboolean(cur) ? "on" : "off");
+			}
 			break;
 		case PKG_OPTION_DEFAULTS:
 			if (cur->type != UCL_STRING)
@@ -851,7 +855,7 @@ pkg_emit_object(struct pkg *pkg, short flags)
 	struct pkg_provide	*provide  = NULL;
 	struct sbuf		*tmpsbuf  = NULL;
 	int i;
-	const char *comment, *desc, *message;
+	const char *comment, *desc, *message, *repopath;
 	const char *script_types = NULL;
 	lic_t licenselogic;
 	int64_t pkgsize;
@@ -868,7 +872,6 @@ pkg_emit_object(struct pkg *pkg, short flags)
 		PKG_MAINTAINER,
 		PKG_PREFIX,
 		PKG_WWW,
-		PKG_REPOPATH,
 		PKG_CKSUM,
 		PKG_FLATSIZE,
 		-1
@@ -877,7 +880,7 @@ pkg_emit_object(struct pkg *pkg, short flags)
 	pkg_get(pkg, PKG_COMMENT, &comment, PKG_LICENSE_LOGIC, &licenselogic,
 	    PKG_DESC, &desc, PKG_MESSAGE, &message, PKG_PKGSIZE, &pkgsize,
 	    PKG_ANNOTATIONS, &annotations, PKG_LICENSES, &licenses,
-	    PKG_CATEGORIES, &categories);
+	    PKG_CATEGORIES, &categories, PKG_REPOPATH, &repopath);
 
 	pkg_debug(4, "Emitting basic metadata");
 	for (i = 0; recopies[i] != -1; i++) {
@@ -887,7 +890,18 @@ pkg_emit_object(struct pkg *pkg, short flags)
 			    key, strlen(key), false);
 	}
 	if (comment)
-		ucl_object_insert_key(top, ucl_object_fromstring_common(comment, 0, UCL_STRING_TRIM), "comment", 7, false);
+		ucl_object_insert_key(top, ucl_object_fromstring_common(comment, 0,
+			UCL_STRING_TRIM), "comment", 7, false);
+	/*
+	 * XXX: dirty hack to be compatible with pkg 1.2
+	 */
+	if (repopath) {
+		ucl_object_insert_key(top,
+			ucl_object_fromstring(repopath), "path", sizeof("path") - 1, false);
+		ucl_object_insert_key(top,
+			ucl_object_fromstring(repopath), "repopath", sizeof("repopath") - 1,
+			false);
+	}
 
 	switch (licenselogic) {
 	case LICENSE_SINGLE:
@@ -1127,6 +1141,8 @@ emit_manifest(struct pkg *pkg, struct sbuf **out, short flags)
 
 	if ((flags & PKG_MANIFEST_EMIT_PRETTY) == PKG_MANIFEST_EMIT_PRETTY)
 		ucl_object_emit_sbuf(top, UCL_EMIT_YAML, out);
+	else if ((flags & PKG_MANIFEST_EMIT_JSON) == PKG_MANIFEST_EMIT_JSON)
+		ucl_object_emit_sbuf(top, UCL_EMIT_JSON, out);
 	else
 		ucl_object_emit_sbuf(top, UCL_EMIT_JSON_COMPACT, out);
 

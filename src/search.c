@@ -277,10 +277,11 @@ exec_search(int argc, char **argv)
 		{ "size",		no_argument,		NULL,	's' },
 		{ "no-repo-update",	no_argument,		NULL,	'U' },
 		{ "regex",		no_argument,		NULL,	'x' },
+		{ "raw-format",		required_argument,	NULL, 	1   },
 		{ NULL,			0,			NULL,	0   },
 	};
 
-	while ((ch = getopt_long(argc, argv, "CcDdefgiL:opqQ:r:RS:sUx", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "+CcDdefgiL:opqQ:r:RS:sUx", longopts, NULL)) != -1) {
 		switch (ch) {
 		case 'C':
 			pkgdb_set_case_sensitivity(true);
@@ -338,6 +339,18 @@ exec_search(int argc, char **argv)
 			break;
 		case 'x':
 			match = MATCH_REGEX;
+			break;
+		case 1:
+			if (strcasecmp(optarg, "json") == 0)
+			       opt |= INFO_RAW_JSON;
+			else if (strcasecmp(optarg, "json-compact") == 0)
+				opt |= INFO_RAW_JSON_COMPACT;
+			else if (strcasecmp(optarg, "yaml") == 0)
+				opt |= INFO_RAW_YAML;
+			else
+				errx(EX_USAGE, "Invalid format '%s' for the "
+				    "raw output, expecting json, json-compat "
+				    "or yaml", optarg);
 			break;
 		default:
 			usage_search();
@@ -407,7 +420,7 @@ exec_search(int argc, char **argv)
 	/* first update the remote repositories if needed */
 	old_quiet = quiet;
 	quiet = true;
-	if (auto_update && (ret = pkgcli_update(false, reponame)) != EPKG_OK)
+	if (auto_update && (ret = pkgcli_update(false, false, reponame)) != EPKG_OK)
 		return (ret);
 	quiet = old_quiet;
 
@@ -418,6 +431,11 @@ exec_search(int argc, char **argv)
 	    reponame)) == NULL) {
 		pkgdb_close(db);
 		return (EX_IOERR);
+	}
+
+	if (opt & INFO_RAW) {
+		if ((opt & (INFO_RAW_JSON|INFO_RAW_JSON_COMPACT)) == 0)
+			opt |= INFO_RAW_YAML;
 	}
 
 	flags = info_flags(opt, true);

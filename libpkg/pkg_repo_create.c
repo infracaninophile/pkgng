@@ -99,7 +99,6 @@ pkg_repo_write_conflicts (struct pkg_conflict_bulk *bulk, FILE *out)
 {
 	struct pkg_conflict_bulk	*pkg_bulk = NULL, *cur, *tmp, *s;
 	struct pkg_conflict	*c1, *c1tmp, *c2, *c2tmp, *ctmp;
-	bool new;
 
 	/*
 	 * Here we reorder bulk hash from hash by file
@@ -123,7 +122,6 @@ pkg_repo_write_conflicts (struct pkg_conflict_bulk *bulk, FILE *out)
 			}
 			/* Now add all new entries from this file to this conflict structure */
 			HASH_ITER (hh, cur->conflicts, c2, c2tmp) {
-				new = true;
 				if (strcmp(sbuf_get(c1->uniqueid), sbuf_get(c2->uniqueid)) == 0)
 					continue;
 
@@ -226,7 +224,8 @@ pkg_create_repo_read_fts(struct pkg_fts_item **items, FTS *fts,
 
 		*ext = '\0';
 
-		if (pkg_repo_meta_is_special_file(fts_ent->fts_name, meta)) {
+		if (strcmp(fts_ent->fts_name, "meta") == 0 ||
+				pkg_repo_meta_is_special_file(fts_ent->fts_name, meta)) {
 			*ext = '.';
 			continue;
 		}
@@ -302,11 +301,17 @@ pkg_create_repo_worker(struct pkg_fts_item *start, size_t nelts,
 	}
 
 	pkg_manifest_keys_new(&keys);
+	pkg_debug(1, "start worker to parse %d packages", nelts);
 
 	if (read_files)
 		flags = PKG_OPEN_MANIFEST_ONLY;
 	else
 		flags = PKG_OPEN_MANIFEST_ONLY | PKG_OPEN_MANIFEST_COMPACT;
+
+	if (read(pip, digestbuf, 1) == -1) {
+		pkg_emit_errno("pkg_create_repo_worker", "read");
+		goto cleanup;
+	}
 
 	LL_FOREACH(start, cur) {
 		if (cur_job >= nelts)
@@ -413,6 +418,7 @@ cleanup:
 	if (mdigest)
 		free(mdigest);
 
+	pkg_debug(1, "worker done");
 	exit(ret);
 }
 
@@ -509,11 +515,11 @@ pkg_create_repo(char *path, const char *output_dir, bool filelist,
 	const char *metafile, bool legacy)
 {
 	FTS *fts = NULL;
-	struct pkg_fts_item *fts_items = NULL, *fts_cur;
+	struct pkg_fts_item *fts_items = NULL, *fts_cur, *fts_start;
 
 	struct pkg_conflict *c, *ctmp;
 	struct pkg_conflict_bulk *conflicts = NULL, *curcb, *tmpcb;
-	int num_workers, i, remaining_workers;
+	int num_workers, i, remaining_workers, remain, cur_jobs, remain_jobs, nworker;
 	size_t len, tasks_per_worker, ntask;
 	struct digest_list_entry *dlist = NULL, *cur_dig, *dtmp;
 	struct pollfd *pfd = NULL;
@@ -561,9 +567,12 @@ pkg_create_repo(char *path, const char *output_dir, bool filelist,
 	repopath[0] = path;
 	repopath[1] = NULL;
 
-	len = sizeof(num_workers);
-	if (sysctlbyname("hw.ncpu", &num_workers, &len, NULL, 0) == -1)
-		num_workers = 6;
+	num_workers = pkg_object_int(pkg_config_get("WORKERS_COUNT"));
+	if (num_workers <= 0) {
+		len = sizeof(num_workers);
+		if (sysctlbyname("hw.ncpu", &num_workers, &len, NULL, 0) == -1)
+			num_workers = 6;
+	}
 
 	if ((fts = fts_open(repopath, FTS_PHYSICAL|FTS_NOCHDIR, NULL)) == NULL) {
 		pkg_emit_errno("fts_open", path);
@@ -607,33 +616,39 @@ pkg_create_repo(char *path, const char *output_dir, bool filelist,
 
 	/* Split items over all workers */
 	num_workers = MIN(num_workers, len);
-	tasks_per_worker = ceil((double)len / num_workers);
+	tasks_per_worker = len / num_workers;
+	/* How much extra tasks should be distributed over the workers */
+	remain = len % num_workers;
+	assert(tasks_per_worker > 0);
 
 	/* Launch workers */
 	pkg_emit_progress_start("Creating repository in %s", output_dir);
 
 	pfd = calloc(num_workers, sizeof(struct pollfd));
 	ntask = 0;
+	cur_jobs = (remain > 0) ? tasks_per_worker + 1 : tasks_per_worker;
+	remain_jobs = cur_jobs;
+	fts_start = fts_items;
+	nworker = 0;
+
 	LL_FOREACH(fts_items, fts_cur) {
-		if (ntask % tasks_per_worker == 0) {
+		if (--remain_jobs == 0) {
 			/* Create new worker */
-			int nworker = ntask / tasks_per_worker;
 			int ofl;
 			int st = SOCK_DGRAM;
 
 #ifdef HAVE_SEQPACKET
 			st = SOCK_SEQPACKET;
 #endif
-
 			if (socketpair(AF_UNIX, st, 0, cur_pipe) == -1) {
 				pkg_emit_errno("pkg_create_repo", "pipe");
 				retcode = EPKG_FATAL;
 				goto cleanup;
 			}
 
-			if (pkg_create_repo_worker(fts_cur, tasks_per_worker, packagesite,
-				filelist ? filesite : NULL, cur_pipe[1],
-				legacy ? NULL : meta) == EPKG_FATAL) {
+			if (pkg_create_repo_worker(fts_start, cur_jobs,
+					packagesite, (filelist ? filesite : NULL), cur_pipe[1],
+					(legacy ? NULL : meta)) == EPKG_FATAL) {
 				close(cur_pipe[0]);
 				close(cur_pipe[1]);
 				retcode = EPKG_FATAL;
@@ -641,13 +656,28 @@ pkg_create_repo(char *path, const char *output_dir, bool filelist,
 			}
 
 			pfd[nworker].fd = cur_pipe[0];
-			pfd[nworker].events = POLL_IN;
+			pfd[nworker].events = POLLIN;
 			close(cur_pipe[1]);
 			/* Make our end of the pipe non-blocking */
 			ofl = fcntl(cur_pipe[0], F_GETFL, 0);
 			fcntl(cur_pipe[0], F_SETFL, ofl | O_NONBLOCK);
+
+			if (--remain > 0)
+				cur_jobs = tasks_per_worker + 1;
+			else
+				cur_jobs = tasks_per_worker;
+
+			remain_jobs = cur_jobs;
+			fts_start = fts_cur->next;
+			nworker ++;
 		}
 		ntask ++;
+	}
+
+	/* Send start marker to all workers */
+	for (i = 0; i < num_workers; i ++) {
+		if (write(pfd[i].fd, ".", 1) == -1)
+			pkg_emit_errno("pkg_create_repo", "write");
 	}
 
 	ntask = 0;
@@ -655,6 +685,7 @@ pkg_create_repo(char *path, const char *output_dir, bool filelist,
 	while(remaining_workers > 0) {
 		int st;
 
+		pkg_debug(1, "checking for %d workers", remaining_workers);
 		retcode = poll(pfd, num_workers, -1);
 		if (retcode == -1) {
 			if (errno == EINTR) {
@@ -667,7 +698,8 @@ pkg_create_repo(char *path, const char *output_dir, bool filelist,
 		}
 		else if (retcode > 0) {
 			for (i = 0; i < num_workers; i ++) {
-				if (pfd[i].revents & (POLL_IN|POLL_HUP|POLL_ERR)) {
+				if (pfd[i].fd != -1 &&
+								(pfd[i].revents & (POLLIN|POLLHUP|POLLERR))) {
 					if (pkg_create_repo_read_pipe(pfd[i].fd, &dlist) != EPKG_OK) {
 						/*
 						 * Wait for the worker finished
@@ -682,7 +714,12 @@ pkg_create_repo(char *path, const char *output_dir, bool filelist,
 						}
 
 						remaining_workers --;
+						pkg_debug(1, "finished worker, %d remaining",
+							remaining_workers);
 						pfd[i].events = 0;
+						pfd[i].revents = 0;
+						close(pfd[i].fd);
+						pfd[i].fd = -1;
 					}
 					else {
 						pkg_emit_progress_tick(ntask++, len);
@@ -732,12 +769,9 @@ cleanup:
 		HASH_DEL(conflicts, curcb);
 		free(curcb);
 	}
-	/* Close pipes */
-	if (pfd != NULL) {
-		for (i = 0; i < num_workers; i ++)
-			close(pfd[i].fd);
+
+	if (pfd != NULL)
 		free(pfd);
-	}
 	if (fts != NULL)
 		fts_close(fts);
 
@@ -842,7 +876,7 @@ pkg_repo_pack_db(const char *name, const char *archive, char *path,
 	sig = NULL;
 	pub = NULL;
 
-	if (packing_init(&pack, archive, meta->packing_format) != EPKG_OK)
+	if (packing_init(&pack, archive, meta->packing_format, false) != EPKG_OK)
 		return (EPKG_FATAL);
 
 	if (rsa != NULL) {

@@ -345,8 +345,11 @@ progress_alarm_handler(int signo)
 static void
 stop_progressbar(void)
 {
-	if (progress_started)
+	if (progress_started) {
+		if (!isatty(STDOUT_FILENO))
+			printf(" done");
 		putchar('\n');
+	}
 
 	last_progress_percent = -1;
 	progress_alarm = false;
@@ -644,15 +647,11 @@ event_callback(void *data, struct pkg_event *ev)
 		break;
 	case PKG_EVENT_LOCKED:
 		pkg = ev->e_locked.pkg;
-		pkg_fprintf(stderr,
-		    "\n%n-%v is locked and may not be modified\n",
-		    pkg, pkg);
+		pkg_printf("\n%n-%v is locked and may not be modified\n", pkg, pkg);
 		break;
 	case PKG_EVENT_REQUIRED:
 		pkg = ev->e_required.pkg;
-		pkg_fprintf(stderr,
-		    "\n%n-%v is required by: %r%{%rn-%rv%| %}",
-		    pkg, pkg, pkg);
+		pkg_printf("\n%n-%v is required by: %r%{%rn-%rv%| %}", pkg, pkg, pkg);
 		if (ev->e_required.force == 1)
 			fprintf(stderr, ", deleting anyway\n");
 		else
@@ -721,7 +720,8 @@ event_callback(void *data, struct pkg_event *ev)
 			    ev->e_incremental_update.added);
 		break;
 	case PKG_EVENT_DEBUG:
-		fprintf(stderr, "DBG(%d)> %s\n", ev->e_debug.level, ev->e_debug.msg);
+		fprintf(stderr, "DBG(%d)[%d]> %s\n", ev->e_debug.level,
+			(int)getpid(), ev->e_debug.msg);
 		break;
 	case PKG_EVENT_QUERY_YESNO:
 		return ( ev->e_query_yesno.deft ?
@@ -760,13 +760,19 @@ event_callback(void *data, struct pkg_event *ev)
 			begin = last_update = time(NULL);
 			bytes_per_second = 0;
 
-			if (isatty(STDOUT_FILENO))
-				progress_started = true;
+			progress_started = true;
+			if (!isatty(STDOUT_FILENO))
+				printf("%s...", progress_message);
 		}
 		break;
 	case PKG_EVENT_PROGRESS_TICK:
-		if (!quiet && isatty(STDOUT_FILENO))
+		if (quiet)
+			break;
+		if (isatty(STDOUT_FILENO))
 			draw_progressbar(ev->e_progress_tick.current, ev->e_progress_tick.total);
+		else if (progress_started && ev->e_progress_tick.current >=
+		    ev->e_progress_tick.total)
+			stop_progressbar();
 		break;
 	case PKG_EVENT_BACKUP:
 		sbuf_cat(msg_buf, "Backing up");

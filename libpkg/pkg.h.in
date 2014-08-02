@@ -355,7 +355,8 @@ typedef enum _pkg_flags {
 	PKG_FLAG_PKG_VERSION_TEST = (1U << 6),
 	PKG_FLAG_UPGRADES_FOR_INSTALLED = (1U << 7),
 	PKG_FLAG_SKIP_INSTALL = (1U << 8),
-	PKG_FLAG_FORCE_MISSING = (1U << 9)
+	PKG_FLAG_FORCE_MISSING = (1U << 9),
+	PKG_FLAG_FETCH_MIRROR = (1U << 10)
 } pkg_flags;
 
 typedef enum _pkg_stats_t {
@@ -857,6 +858,7 @@ void pkg_manifest_parser_free(struct pkg_manifest_parser *p);
 #define PKG_MANIFEST_EMIT_COMPACT 0x1
 #define PKG_MANIFEST_EMIT_NOFILES (0x1 << 1)
 #define PKG_MANIFEST_EMIT_PRETTY (0x1 << 2)
+#define PKG_MANIFEST_EMIT_JSON (0x1 << 3)
 
 /**
  * Emit a manifest according to the attributes of pkg.
@@ -1160,6 +1162,8 @@ void pkg_jobs_free(struct pkg_jobs *jobs);
 int pkg_jobs_add(struct pkg_jobs *j, match_t match, char **argv, int argc);
 int pkg_jobs_solve(struct pkg_jobs *j);
 int pkg_jobs_set_repository(struct pkg_jobs *j, const char *name);
+const char* pkg_jobs_destdir(struct pkg_jobs *j);
+int pkg_jobs_set_destdir(struct pkg_jobs *j, const char *name);
 void pkg_jobs_set_flags(struct pkg_jobs *j, pkg_flags f);
 pkg_jobs_t pkg_jobs_type(struct pkg_jobs *j);
 
@@ -1327,11 +1331,16 @@ pkg_change_t pkg_version_change_between(const struct pkg * pkg1, const struct pk
  * @return An error code.
  */
 int pkg_fetch_file(struct pkg_repo *repo, const char *url, char *dest, time_t t);
+/**
+ * Fetch a file to temporary destination
+ */
+int pkg_fetch_file_tmp(struct pkg_repo *repo, const char *url, char *dest,
+	time_t t);
 
 /**
  * Get cached name of a package
  */
-void pkg_repo_cached_name(struct pkg *pkg, char *dest, size_t destlen);
+int pkg_repo_cached_name(struct pkg *pkg, char *dest, size_t destlen);
 
 /* glue to deal with ports */
 int ports_parse_plist(struct pkg *, const char *, const char *);

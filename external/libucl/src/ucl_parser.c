@@ -393,9 +393,16 @@ ucl_expand_single_variable (struct ucl_parser *parser, const char *ptr,
 
 		/* Leave variable as is */
 		if (!found) {
-			memcpy (d, ptr, 2);
-			d += 2;
-			ret --;
+			if (strict) {
+				/* Copy '${' */
+				memcpy (d, ptr, 2);
+				d += 2;
+				ret --;
+			}
+			else {
+				memcpy (d, ptr, 1);
+				d ++;
+			}
 		}
 	}
 
@@ -669,8 +676,7 @@ ucl_maybe_parse_number (ucl_object_t *obj,
 	}
 
 	/* Now check endptr */
-	if (endptr == NULL || ucl_lex_is_atom_end (*endptr) || *endptr == '\0' ||
-			ucl_test_character (*endptr, UCL_CHARACTER_WHITESPACE_UNSAFE)) {
+	if (endptr == NULL || ucl_lex_is_atom_end (*endptr) || *endptr == '\0') {
 		p = endptr;
 		goto set_obj;
 	}
@@ -780,6 +786,14 @@ ucl_maybe_parse_number (ucl_object_t *obj,
 				p ++;
 				goto set_obj;
 			}
+			break;
+		case '\t':
+		case ' ':
+			while (p < end && ucl_test_character(*p, UCL_CHARACTER_WHITESPACE)) {
+				p++;
+			}
+			if (ucl_lex_is_atom_end(*p))
+				goto set_obj;
 			break;
 		}
 	}
@@ -1654,6 +1668,11 @@ ucl_state_machine (struct ucl_parser *parser)
 				return false;
 			}
 			else {
+				/* Skip any spaces */
+				while (p < chunk->end && ucl_test_character (*p,
+						UCL_CHARACTER_WHITESPACE_UNSAFE)) {
+					ucl_chunk_skipc (chunk, p);
+				}
 				p = chunk->pos;
 				if (*p == '[') {
 					parser->state = UCL_STATE_VALUE;
@@ -1922,9 +1941,13 @@ ucl_parser_add_chunk (struct ucl_parser *parser, const unsigned char *data,
 {
 	struct ucl_chunk *chunk;
 
-	if (data == NULL || len == 0) {
+	if (data == NULL) {
 		ucl_create_err (&parser->err, "invalid chunk added");
 		return false;
+	}
+	if (len == 0) {
+		parser->top_obj = ucl_object_typed_new(UCL_OBJECT);
+		return true;
 	}
 	if (parser->state != UCL_STATE_ERROR) {
 		chunk = UCL_ALLOC (sizeof (struct ucl_chunk));

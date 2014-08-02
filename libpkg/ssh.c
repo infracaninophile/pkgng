@@ -43,6 +43,7 @@
 #include <fcntl.h>
 
 #include "pkg.h"
+#include "private/event.h"
 
 int
 pkg_sshserve(int fd)
@@ -86,6 +87,8 @@ pkg_sshserve(int fd)
 		if (*file == '/')
 			file++;
 
+		pkg_debug(1, "SSH server> file requested: %s", file);
+
 		age = file;
 		while (!isspace(*age)) {
 			if (*age == '\0') {
@@ -128,14 +131,16 @@ pkg_sshserve(int fd)
 		if (restricted != NULL) {
 #endif
 			chdir(restricted);
-			file = realpath(file, fpath);
-			if (strncmp(file, restricted, strlen(restricted)) != 0) {
+
+			if (realpath(file, fpath) == NULL ||
+					strncmp(file, restricted, strlen(restricted)) != 0) {
 				printf("ko: file not found\n");
 				continue;
 			}
 		}
 
-		if (fstatat(fd, file, &st, AT_SYMLINK_NOFOLLOW) == -1) {
+		if (fstatat(fd, fpath, &st, 0) == -1) {
+			pkg_debug(1, "SSH server> fstatat failed");
 			printf("ko: file not found\n");
 			continue;
 		}
@@ -150,15 +155,20 @@ pkg_sshserve(int fd)
 			continue;
 		}
 
-		if ((ffd = openat(fd, file, O_RDONLY)) == -1) {
+		if ((ffd = openat(fd, fpath, O_RDONLY)) == -1) {
 			printf("ko: file not found\n");
 			continue;
 		}
 
 		printf("ok: %" PRIdMAX "\n", (intmax_t)st.st_size);
+		pkg_debug(1, "SSH server> sending ok: %" PRIdMAX "", (intmax_t)st.st_size);
 
-		while ((r = read(ffd, buf, sizeof(buf))) > 0)
+		while ((r = read(ffd, buf, sizeof(buf))) > 0) {
+			pkg_debug(1, "SSH server> sending data");
 			fwrite(buf, 1, r, stdout);
+		}
+
+		pkg_debug(1, "SSH server> finished");
 
 		close(ffd);
 	}

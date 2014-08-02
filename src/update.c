@@ -46,9 +46,9 @@
  * Fetch repository calalogues.
  */
 int
-pkgcli_update(bool force, const char *reponame)
+pkgcli_update(bool force, bool strict, const char *reponame)
 {
-	int retcode = EPKG_FATAL, update_count = 0;
+	int retcode = EPKG_FATAL, update_count = 0, total_count = 0;
 	struct pkg_repo *r = NULL;
 
 	/* Only auto update if the user has write access. */
@@ -81,18 +81,31 @@ pkgcli_update(bool force, const char *reponame)
 		retcode = pkg_update(r, force);
 		if (retcode == EPKG_UPTODATE) {
 			if (!quiet)
-				printf("%s repository catalogue is "
-				       "up-to-date, no need to fetch "
-				       "fresh copy\n", pkg_repo_name(r));
-				retcode = EPKG_OK;
+				printf("%s repository is up-to-date\n", pkg_repo_name(r));
 		}
+		else if (retcode != EPKG_OK && strict)
+			retcode = EPKG_FATAL;
+
+		total_count ++;
 		if (retcode != EPKG_OK)
-			break;
+			continue;
+
 		update_count ++;
 	}
 
-	if (!quiet && update_count == 0)
-		printf("No repositories are enabled\n");
+	if (!strict || retcode == EPKG_UPTODATE)
+		retcode = EPKG_OK;
+
+	if (total_count == 0) {
+		if (!quiet)
+			printf("No repositories are enabled\n");
+		retcode = EPKG_FATAL;
+	}
+	else if (update_count == 0) {
+		if (!quiet)
+			if (retcode == EPKG_OK)
+				printf("All repositories are up-to-date\n");
+	}
 
 	return (retcode);
 }
@@ -119,7 +132,7 @@ exec_update(int argc, char **argv)
 		{ NULL,		0,			NULL,	0   },
 	};
 
-	while ((ch = getopt_long(argc, argv, "fqr:", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "+fqr:", longopts, NULL)) != -1) {
 		switch (ch) {
 		case 'f':
 			force = true;
@@ -152,7 +165,8 @@ exec_update(int argc, char **argv)
 	} else if (ret != EPKG_OK)
 		return (EX_IOERR);
 
-	ret = pkgcli_update(force, reponame);
+	/* For pkg-update update op is strict */
+	ret = pkgcli_update(force, true, reponame);
 
 	return ((ret == EPKG_OK) ? EX_OK : EX_SOFTWARE);
 }

@@ -318,6 +318,7 @@ print_info(struct pkg * const pkg, uint64_t options)
 	int64_t flatsize, oldflatsize, pkgsize;
 	int cout = 0;		/* Number of characters output */
 	int info_num;		/* Number of different data items to print */
+	int outflags = 0;
 
 	pkg_get(pkg,
 		PKG_REPOURL,       &repourl,
@@ -326,10 +327,20 @@ print_info(struct pkg * const pkg, uint64_t options)
 		PKG_PKGSIZE,       &pkgsize);
 
 	if (options & INFO_RAW) {
-		if (pkg_type(pkg) != PKG_REMOTE)
-			pkg_emit_manifest_file(pkg, stdout, PKG_MANIFEST_EMIT_PRETTY, NULL);
-		else
-			pkg_emit_manifest_file(pkg, stdout, PKG_MANIFEST_EMIT_COMPACT|PKG_MANIFEST_EMIT_PRETTY, NULL);
+		switch (options & (INFO_RAW_YAML|INFO_RAW_JSON|INFO_RAW_JSON_COMPACT)) {
+		case INFO_RAW_YAML:
+			outflags |= PKG_MANIFEST_EMIT_PRETTY;
+			break;
+		case INFO_RAW_JSON:
+			outflags |= PKG_MANIFEST_EMIT_JSON;
+		case INFO_RAW_JSON_COMPACT:
+			break;
+		}
+		if (pkg_type(pkg) == PKG_REMOTE)
+			outflags |= PKG_MANIFEST_EMIT_COMPACT;
+
+		pkg_emit_manifest_file(pkg, stdout, outflags, NULL);
+
 		return;
 	}
 
@@ -646,13 +657,15 @@ struct pkg_solved_display_item {
 };
 
 static void
-set_jobs_summary_pkg(struct pkg *new_pkg, struct pkg *old_pkg,
+set_jobs_summary_pkg(struct pkg_jobs *jobs,
+		struct pkg *new_pkg, struct pkg *old_pkg,
 		pkg_solved_t type, int64_t *oldsize,
 		int64_t *newsize, int64_t *dlsize,
 		struct pkg_solved_display_item **disp)
 {
-	const char *oldversion;
+	const char *oldversion, *repopath, *destdir;
 	char path[MAXPATHLEN];
+	int ret;
 	struct stat st;
 	int64_t flatsize, oldflatsize, pkgsize;
 	struct pkg_solved_display_item *it;
@@ -660,7 +673,8 @@ set_jobs_summary_pkg(struct pkg *new_pkg, struct pkg *old_pkg,
 	flatsize = oldflatsize = pkgsize = 0;
 	oldversion = NULL;
 
-	pkg_get(new_pkg, PKG_FLATSIZE, &flatsize, PKG_PKGSIZE, &pkgsize);
+	pkg_get(new_pkg, PKG_FLATSIZE, &flatsize, PKG_PKGSIZE, &pkgsize,
+		PKG_REPOPATH, &repopath);
 	if (old_pkg != NULL)
 		pkg_get(old_pkg, PKG_VERSION, &oldversion, PKG_FLATSIZE, &oldflatsize);
 
@@ -675,16 +689,26 @@ set_jobs_summary_pkg(struct pkg *new_pkg, struct pkg *old_pkg,
 	it->solved_type = type;
 
 	if (old_pkg != NULL && pkg_is_locked(old_pkg)) {
-		pkg_printf("\tPackage %n-%v is locked ", old_pkg, old_pkg);
 		it->display_type = PKG_DISPLAY_LOCKED;
+		DL_APPEND(disp[it->display_type], it);
+		return;
 	}
+
+	destdir = pkg_jobs_destdir(jobs);
 
 	switch (type) {
 	case PKG_SOLVED_INSTALL:
 	case PKG_SOLVED_UPGRADE:
-		pkg_repo_cached_name(new_pkg, path, sizeof(path));
+		ret = EPKG_FATAL;
 
-		if (stat(path, &st) == -1 || pkgsize != st.st_size)
+		if (destdir == NULL)
+			ret = pkg_repo_cached_name(new_pkg, path, sizeof(path));
+		else if (repopath != NULL) {
+			snprintf(path, sizeof(path), "%s/%s", destdir, repopath);
+			ret = EPKG_OK;
+		}
+
+		if (ret == EPKG_OK && (stat(path, &st) == -1 || pkgsize != st.st_size))
 			/* file looks corrupted (wrong size),
 					   assume a checksum mismatch will
 					   occur later and the file will be
@@ -724,13 +748,27 @@ set_jobs_summary_pkg(struct pkg *new_pkg, struct pkg *old_pkg,
 		break;
 
 	case PKG_SOLVED_FETCH:
-		*dlsize += pkgsize;
 		*newsize += pkgsize;
 		it->display_type = PKG_DISPLAY_FETCH;
 
-		pkg_repo_cached_name(new_pkg, path, sizeof(path));
-		if (stat(path, &st) != -1)
+		if (destdir == NULL)
+			pkg_repo_cached_name(new_pkg, path, sizeof(path));
+		else
+			snprintf(path, sizeof(path), "%s/%s", destdir, repopath);
+
+		if (stat(path, &st) != -1) {
 			*oldsize += st.st_size;
+
+			if (pkgsize != st.st_size)
+				*dlsize += pkgsize;
+			else {
+				free(it);
+				return;
+			}
+		}
+		else
+			*dlsize += pkgsize;
+
 		break;
 	}
 	DL_APPEND(disp[it->display_type], it);
@@ -825,14 +863,14 @@ static const char* pkg_display_messages[PKG_DISPLAY_MAX + 1] = {
 	[PKG_DISPLAY_MAX] = NULL
 };
 
-void
+int
 print_jobs_summary(struct pkg_jobs *jobs, const char *msg, ...)
 {
 	struct pkg *new_pkg, *old_pkg;
 	void *iter = NULL;
 	char size[7];
 	va_list ap;
-	int type;
+	int type, displayed = 0;
 	int64_t dlsize, oldsize, newsize;
 	struct pkg_solved_display_item *disp[PKG_DISPLAY_MAX], *cur, *tmp;
 
@@ -840,21 +878,23 @@ print_jobs_summary(struct pkg_jobs *jobs, const char *msg, ...)
 	type = pkg_jobs_type(jobs);
 	memset(disp, 0, sizeof (disp));
 
-	if (msg != NULL) {
-		va_start(ap, msg);
-		vprintf(msg, ap);
-		va_end(ap);
-	}
-
-	while (pkg_jobs_iter(jobs, &iter, &new_pkg, &old_pkg, &type)) {
-		set_jobs_summary_pkg(new_pkg, old_pkg, type, &oldsize, &newsize, &dlsize, disp);
-	}
+	while (pkg_jobs_iter(jobs, &iter, &new_pkg, &old_pkg, &type))
+		set_jobs_summary_pkg(jobs, new_pkg, old_pkg, type, &oldsize,
+			&newsize, &dlsize, disp);
 
 	for (type = 0; type < PKG_DISPLAY_MAX; type ++) {
 		if (disp[type] != NULL) {
+			if (msg != NULL) {
+				va_start(ap, msg);
+				vprintf(msg, ap);
+				va_end(ap);
+				fflush(stdout);
+				msg = NULL;
+			}
 			printf("%s:\n", pkg_display_messages[type]);
 			DL_FOREACH_SAFE(disp[type], cur, tmp) {
 				display_summary_item(cur, newsize, dlsize);
+				displayed ++;
 				free(cur);
 			}
 			puts("");
@@ -873,6 +913,8 @@ print_jobs_summary(struct pkg_jobs *jobs, const char *msg, ...)
 		humanize_number(size, sizeof(size), dlsize, "B", HN_AUTOSCALE, 0);
 		printf("%s to be downloaded\n", size);
 	}
+
+	return (displayed);
 }
 
 int

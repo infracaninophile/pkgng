@@ -60,6 +60,7 @@ global:
 	pkg_emit_manifest_file;
 	pkg_event_register;
 	pkg_fetch_file;
+	pkg_fetch_file_tmp;
 	pkg_file_get;
 	pkg_file_keep;
 	pkg_file_mode;
@@ -86,9 +87,11 @@ global:
 	pkg_jobs_count;
 	pkg_jobs_cudf_emit_file;
 	pkg_jobs_cudf_parse_output;
+	pkg_jobs_destdir;
 	pkg_jobs_free;
 	pkg_jobs_iter;
 	pkg_jobs_new;
+	pkg_jobs_set_destdir;
 	pkg_jobs_set_flags;
 	pkg_jobs_set_repository;
 	pkg_jobs_solve;

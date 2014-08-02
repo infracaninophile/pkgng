@@ -2,6 +2,7 @@
  * Copyright (c) 2011-2012 Marin Atanasov Nikolov <dnaeon@gmail.com>
  * Copyright (c) 2013-2014 Matthew Seaman <matthew@FreeBSD.org>
  * Copyright (c) 2012-2013 Bryan Drewery <bdrewery@FreeBSD.org>
+ * Copyright (c) 2014 Vsevolod Stakhov <vsevolod@FreeBSD.org>
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
@@ -44,7 +45,8 @@
 void
 usage_fetch(void)
 {
-	fprintf(stderr, "Usage: pkg fetch [-r reponame] [-dqUy] [-Cgix] <pkg-name> <...>\n");
+	fprintf(stderr, "Usage: pkg fetch [-r reponame] [-o destdir] [-dqUy] "
+					"[-Cgix] <pkg-name> <...>\n");
 	fprintf(stderr, "       pkg fetch [-r reponame] [-dqUy] -a\n");
 	fprintf(stderr, "       pkg fetch [-r reponame] [-dqUy] -u\n\n");
 	fprintf(stderr, "For more information see 'pkg help fetch'.\n");
@@ -56,9 +58,10 @@ exec_fetch(int argc, char **argv)
 	struct pkgdb	*db = NULL;
 	struct pkg_jobs	*jobs = NULL;
 	const char	*reponame = NULL;
+	const char *destdir = NULL;
 	int		 ch;
 	int		 retcode = EX_SOFTWARE;
-	bool		 upgrades_for_installed = false, rc;
+	bool		 upgrades_for_installed = false, rc, csum_only = false;
 	unsigned	 mode;
 	match_t		 match = MATCH_EXACT;
 	pkg_flags	 f = PKG_FLAG_NONE;
@@ -75,10 +78,11 @@ exec_fetch(int argc, char **argv)
 		{ "no-repo-update",	no_argument,		NULL,	'U' },
 		{ "regex",		no_argument,		NULL,	'x' },
 		{ "yes",		no_argument,		NULL,	'y' },
+		{ "output",		required_argument,	NULL,	'o' },
 		{ NULL,			0,			NULL,	0   },
 	};
 
-	while ((ch = getopt_long(argc, argv, "aCdgiqr:Uuxy", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "+aCdgiqr:Uuxyo:", longopts, NULL)) != -1) {
 		switch (ch) {
 		case 'a':
 			match = MATCH_ALL;
@@ -113,6 +117,10 @@ exec_fetch(int argc, char **argv)
 			break;
 		case 'y':
 			yes = true;
+			break;
+		case 'o':
+			f |= PKG_FLAG_FETCH_MIRROR;
+			destdir = optarg;
 			break;
 		default:
 			usage_fetch();
@@ -160,7 +168,7 @@ exec_fetch(int argc, char **argv)
 
 	/* first update the remote repositories if needed */
 	if (auto_update &&
-	    (retcode = pkgcli_update(false, reponame)) != EPKG_OK)
+	    (retcode = pkgcli_update(false, false, reponame)) != EPKG_OK)
 		return (retcode);
 
 	if (pkgdb_open_all(&db, PKGDB_REMOTE, reponame) != EPKG_OK)
@@ -179,6 +187,9 @@ exec_fetch(int argc, char **argv)
 	if (reponame != NULL && pkg_jobs_set_repository(jobs, reponame) != EPKG_OK)
 		goto cleanup;
 
+	if (destdir != NULL && pkg_jobs_set_destdir(jobs, destdir) != EPKG_OK)
+		goto cleanup;
+
 	pkg_jobs_set_flags(jobs, f);
 
 	if (!upgrades_for_installed &&
@@ -192,8 +203,16 @@ exec_fetch(int argc, char **argv)
 		goto cleanup;
 
 	if (!quiet) {
-		print_jobs_summary(jobs, "The following packages will be fetched:\n\n");
-		rc = query_yesno(false, "\nProceed with fetching packages [y/N]: ");
+		rc = print_jobs_summary(jobs, "The following packages will be fetched:\n\n");
+
+		if (rc != 0)
+			rc = query_yesno(false, "\nProceed with fetching packages [y/N]: ");
+		else {
+			printf("No packages are required to be fetched.\n");
+			rc = query_yesno(false, "Check the integrity of packages "
+							"downloaded [y/N]: ");
+			csum_only = true;
+		}
 	}
 	else {
 		rc = true;
@@ -201,6 +220,9 @@ exec_fetch(int argc, char **argv)
 	
 	if (!rc || pkg_jobs_apply(jobs) != EPKG_OK)
 		goto cleanup;
+
+	if (csum_only && !quiet)
+		printf("Integrity check was successful.\n");
 
 	retcode = EX_OK;
 

@@ -74,7 +74,6 @@ pkg_repo_fetch_remote_tmp(struct pkg_repo *repo,
 	char url[MAXPATHLEN];
 	char tmp[MAXPATHLEN];
 	int fd;
-	mode_t mask;
 	const char *tmpdir, *dot;
 
 	/*
@@ -97,9 +96,7 @@ pkg_repo_fetch_remote_tmp(struct pkg_repo *repo,
 	mkdirs(tmpdir);
 	snprintf(tmp, sizeof(tmp), "%s/%s.%s.XXXXXX", tmpdir, filename, extension);
 
-	mask = umask(022);
 	fd = mkstemp(tmp);
-	umask(mask);
 	if (fd == -1) {
 		pkg_emit_error("Could not create temporary file %s, "
 		    "aborting update.\n", tmp);
@@ -702,7 +699,6 @@ pkg_repo_fetch_remote_extract_tmp(struct pkg_repo *repo, const char *filename,
 		time_t *t, int *rc)
 {
 	int fd, dest_fd;
-	mode_t mask;
 	FILE *res = NULL;
 	const char *tmpdir;
 	char tmp[MAXPATHLEN];
@@ -718,9 +714,7 @@ pkg_repo_fetch_remote_extract_tmp(struct pkg_repo *repo, const char *filename,
 		tmpdir = "/tmp";
 	snprintf(tmp, sizeof(tmp), "%s/%s.XXXXXX", tmpdir, filename);
 
-	mask = umask(022);
 	dest_fd = mkstemp(tmp);
-	umask(mask);
 	if (dest_fd == -1) {
 		pkg_emit_error("Could not create temporary file %s, "
 				"aborting update.\n", tmp);
@@ -1101,19 +1095,36 @@ pkg_repo_fetch_package(struct pkg *pkg)
 	return (repo->ops->fetch_pkg(repo, pkg));
 }
 
-void
-pkg_repo_cached_name(struct pkg *pkg, char *dest, size_t destlen)
+int
+pkg_repo_mirror_package(struct pkg *pkg, const char *destdir)
 {
 	struct pkg_repo *repo;
 
 	if (pkg->repo == NULL) {
-		return;
+		pkg_emit_error("Trying to mirror package without repository");
+		return (EPKG_FATAL);
 	}
 
 	repo = pkg->repo;
-	if (repo->ops->get_cached_name == NULL) {
-		return;
+	if (repo->ops->mirror_pkg == NULL) {
+		pkg_emit_error("Repository %s does not support mirroring", repo->name);
+		return (EPKG_FATAL);
 	}
 
-	repo->ops->get_cached_name(repo, pkg, dest, destlen);
+	return (repo->ops->mirror_pkg(repo, pkg, destdir));
+}
+
+int
+pkg_repo_cached_name(struct pkg *pkg, char *dest, size_t destlen)
+{
+	struct pkg_repo *repo;
+
+	if (pkg->repo == NULL)
+		return (EPKG_FATAL);
+
+	repo = pkg->repo;
+	if (repo->ops->get_cached_name == NULL)
+		return (EPKG_FATAL);
+
+	return (repo->ops->get_cached_name(repo, pkg, dest, destlen));
 }

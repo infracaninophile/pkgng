@@ -1,5 +1,5 @@
 m4_define([maj_ver], [1])
-m4_define([med_ver], [3])
+m4_define([med_ver], [4])
 m4_define([min_ver], [0])
 m4_define([api_ver], [m4_eval(maj_ver * 1000000 + med_ver * 1000 + min_ver)])
 m4_define([dev_ver], m4_expand([m4_normalize(m4_sinclude([dev_version.m4]))]))
@@ -63,7 +63,6 @@ AC_LINK_IFELSE([
 ],
 [
  	AC_MSG_RESULT([no])
-	AC_DEFINE([HAVE_ATOMIC_BUILTINS], [0], [Has gcc/MSVC atomic intrinsics])
 ])
 
 AC_CHECK_HEADERS_ONCE([machine/endian.h])
@@ -196,18 +195,6 @@ AC_CHECK_HEADERS([gelf.h libelf.h], [
 	]])
 	)])
 
-AC_CHECK_HEADER([sys/sbuf.h], [
-	AC_DEFINE(HAVE_SYS_SBUF_H, 1, [Define to 1 if you have the <sys/sbuf.h> header file.])
-	AC_CHECK_LIB(sbuf, sbuf_new, [
-		AC_DEFINE(HAVE_LIBSBUF, 1, [Define to 1 if you have the 'sbuf' library (-lsbuf).])
-		LIBSBUF_LIB="-lsbuf"
-	])
-], [
-	LIBSBUF_LIB="\$(top_builddir)/external/libsbuf.la"
-	LIBSBUF_BUNDLED="libsbuf.la"
-	LIBSBUF_INCLUDE="-I\$(top_srcdir)/external/libsbuf"
-])
-
 AC_CHECK_HEADER([execinfo.h], [
 	AC_DEFINE(HAVE_EXECINFO_H, 1, [Define to 1 if you have the <execinfo.h> header file.])
 	AC_CHECK_LIB(execinfo, backtrace, [
@@ -240,6 +227,16 @@ AC_CHECK_HEADER([sys/capability.h], [
         ])
 
 ])
+
+AC_CACHE_CHECK(for arc4random_uniform,
+               ac_cv_func_arc4random_uniform,
+               [AC_TRY_COMPILE([#include <stdlib.h>],
+                               [arc4random_uniform(255);],
+                               [ac_cv_func_arc4random_uniform=yes],
+                               [ac_cv_func_arc4random_uniform=no])])
+if test "$ac_cv_func_arc4random_uniform" = yes ; then
+	AC_DEFINE(HAVE_ARC4RANDOM, 1, [Define 1 if you have 'arc4random_uniform' function.])
+fi
 
 AC_SUBST([LIBELF_LIB])
 AC_SUBST([LIBELF_BUNDLED])
@@ -299,7 +296,7 @@ AC_CONFIG_FILES(Makefile \
 		scripts/periodic/490.status-pkg-changes
 		scripts/sbin/pkg2ng
 		scripts/completion/_pkg.bash
-		scripts/completion/_pkg.zsh)
+		scripts/completion/_pkg)
 AC_CONFIG_FILES(m4_expand([repos_makefiles]))
 
 AC_CONFIG_HEADERS(pkg_config.h)

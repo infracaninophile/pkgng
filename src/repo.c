@@ -25,6 +25,7 @@
  */
 
 #include <getopt.h>
+#include <signal.h>
 #include <sysexits.h>
 #include <stdio.h>
 #include <string.h>
@@ -38,7 +39,7 @@
 void
 usage_repo(void)
 {
-	fprintf(stderr, "Usage: pkg repo [-lq] [-o output-dir] <repo-path> "
+	fprintf(stderr, "Usage: pkg repo [-lqL] [-o output-dir] <repo-path> "
 	    "[<rsa-key>|signing_command: <the command>]\n\n");
 	fprintf(stderr, "For more information see 'pkg help repo'.\n");
 }
@@ -48,10 +49,17 @@ password_cb(char *buf, int size, int rwflag, void *key)
 {
 	int len = 0;
 	char pass[BUFSIZ];
+	sigset_t sig, oldsig;
+
 	(void)rwflag;
 	(void)key;
 
-	if (readpassphrase("Enter passphrase: ", pass, BUFSIZ, RPP_ECHO_OFF) == NULL)
+	/* Block sigalarm temporary */
+	sigemptyset(&sig);
+	sigaddset(&sig, SIGALRM);
+	sigprocmask(SIG_BLOCK, &sig, &oldsig);
+
+	if (readpassphrase("\nEnter passphrase: ", pass, BUFSIZ, RPP_ECHO_OFF) == NULL)
 		return 0;
 
 	len = strlen(pass);
@@ -62,6 +70,8 @@ password_cb(char *buf, int size, int rwflag, void *key)
 	memset(buf, '\0', size);
 	memcpy(buf, pass, len);
 	memset(pass, 0, BUFSIZ);
+
+	sigprocmask(SIG_SETMASK, &oldsig, NULL);
 
 	return (len);
 }
@@ -85,7 +95,7 @@ exec_repo(int argc, char **argv)
 		{ NULL,		0,			NULL,	0   },
 	};
 
-	while ((ch = getopt_long(argc, argv, "lo:qm:L", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "+lo:qm:L", longopts, NULL)) != -1) {
 		switch (ch) {
 		case 'l':
 			filelist = true;

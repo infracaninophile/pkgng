@@ -73,12 +73,10 @@ check_deps(struct pkgdb *db, struct pkg *p, struct deps_head *dh, bool noinstall
 	while (pkg_deps(p, &dep) == EPKG_OK) {
 		/* do we have a missing dependency? */
 		if (pkg_is_installed(db, pkg_dep_origin(dep)) != EPKG_OK) {
-			if (noinstall)
-				printf("%s\n", pkg_dep_origin(dep));
-			else
-				printf("%s has a missing dependency: %s\n", origin,
-			       pkg_dep_origin(dep));
-			add_missing_dep(dep, dh, &nbpkgs);
+			 printf("%s has a missing dependency: %s\n", origin,
+                               pkg_dep_origin(dep));
+			if (!noinstall)
+				add_missing_dep(dep, dh, &nbpkgs);
 		}
 	}
 	
@@ -276,7 +274,7 @@ exec_check(int argc, char **argv)
 
 	struct deps_head dh = STAILQ_HEAD_INITIALIZER(dh);
 
-	while ((ch = getopt_long(argc, argv, "aBCdginrsvxy", longopts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "+aBCdginrsvxy", longopts, NULL)) != -1) {
 		switch (ch) {
 		case 'a':
 			match = MATCH_ALL;

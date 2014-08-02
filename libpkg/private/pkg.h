@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2011-2012 Baptiste Daroussin <bapt@FreeBSD.org>
+ * Copyright (c) 2011-2014 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
  * Copyright (c) 2013 Matthew Seaman <matthew@FreeBSD.org>
  * Copyright (c) 2013 Vsevolod Stakhov <vsevolod@FreeBSD.org>
@@ -111,9 +111,9 @@
 	} while (0)
 
 #define HASH_FIND_UCLT(head,type,out)                            \
-	HASH_FIND(hh, head, type, sizeof(enum ucl_type), out)
+	HASH_FIND(hh, head, type, sizeof(uint16_t), out)
 #define HASH_ADD_UCLT(head,type,add)                             \
-	HASH_ADD(hh, head, type, sizeof(enum ucl_type), add)
+	HASH_ADD(hh, head, type, sizeof(uint16_t), add)
 
 #define HASH_FIND_YAMLT(head,type,out)                                   \
 	HASH_FIND(hh,head,type,sizeof(yaml_node_type_t),out)
@@ -265,7 +265,8 @@ struct pkg_jobs {
 	int total;
 	int conflicts_registered;
 	bool need_fetch;
-	const char *	 reponame;
+	const char *reponame;
+	const char *destdir;
 	struct job_pattern *patterns;
 };
 
@@ -383,9 +384,11 @@ struct pkg_repo_ops {
 	int (*ensure_loaded)(struct pkg_repo *repo, struct pkg *pkg, unsigned flags);
 
 	/* Fetch package from repo */
-	void (*get_cached_name)(struct pkg_repo *, struct pkg *,
+	int (*get_cached_name)(struct pkg_repo *, struct pkg *,
 					char *dest, size_t destlen);
 	int (*fetch_pkg)(struct pkg_repo *, struct pkg *);
+	int (*mirror_pkg)(struct pkg_repo *repo, struct pkg *pkg,
+		const char *destdir);
 };
 
 struct pkg_repo {
@@ -462,6 +465,7 @@ extern struct pkg_key {
 int pkg_fetch_file_to_fd(struct pkg_repo *repo, const char *url,
 		int dest, time_t *t);
 int pkg_repo_fetch_package(struct pkg *pkg);
+int pkg_repo_mirror_package(struct pkg *pkg, const char *destdir);
 FILE* pkg_repo_fetch_remote_extract_tmp(struct pkg_repo *repo,
 		const char *filename, time_t *t, int *rc);
 int pkg_repo_fetch_meta(struct pkg_repo *repo, time_t *t);
@@ -530,7 +534,8 @@ void pkg_provide_free(struct pkg_provide *);
 
 struct packing;
 
-int packing_init(struct packing **pack, const char *path, pkg_formats format);
+int packing_init(struct packing **pack, const char *path, pkg_formats format,
+    bool passmode);
 int packing_append_file_attr(struct packing *pack, const char *filepath,
 			     const char *newpath, const char *uname,
 			     const char *gname, mode_t perm);
@@ -543,7 +548,7 @@ pkg_formats packing_format_from_string(const char *str);
 const char* packing_format_to_string(pkg_formats format);
 
 int pkg_delete_files(struct pkg *pkg, unsigned force);
-int pkg_delete_dirs(struct pkgdb *db, struct pkg *pkg, bool force);
+int pkg_delete_dirs(struct pkgdb *db, struct pkg *pkg);
 
 int pkg_conflicts_request_resolve(struct pkg_jobs *j);
 int pkg_conflicts_append_pkg(struct pkg *p, struct pkg_jobs *j);
@@ -604,5 +609,11 @@ size_t pkg_checksum_type_size(pkg_checksum_type_t type);
 int pkg_checksum_calculate(struct pkg *pkg, struct pkgdb *db);
 
 int pkg_symlink_cksum(const char *path, const char *root, char *cksum);
+
+int pkg_add_upgrade(struct pkgdb *db, const char *path, unsigned flags,
+    struct pkg_manifest_key *keys, const char *location,
+    struct pkg *rp, struct pkg *lp);
+void pkg_delete_dir(struct pkg *pkg, struct pkg_dir *dir);
+void pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force);
 
 #endif

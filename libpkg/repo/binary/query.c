@@ -115,7 +115,8 @@ pkg_repo_binary_query(struct pkg_repo *repo, const char *pattern, match_t match)
 		"cksum, manifestdigest, path AS repopath, '%s' AS dbname "
 		"FROM packages";
 
-	assert(match == MATCH_ALL || (pattern != NULL && pattern[0] != '\0'));
+	if (match != MATCH_ALL && (pattern == NULL || pattern[0] == '\0'))
+		return (NULL);
 
 	sql = sbuf_new_auto();
 	comp = pkgdb_get_pattern_query(pattern, match);
@@ -324,13 +325,14 @@ pkg_repo_binary_search(struct pkg_repo *repo, const char *pattern, match_t match
 		"SELECT id, origin, name, version, comment, "
 		"prefix, desc, arch, maintainer, www, "
 		"licenselogic, flatsize, pkgsize, "
-		"cksum, path AS repopath, '%1$s' AS dbname "
+		"cksum, path AS repopath, '%1$s' AS dbname, '%2$s' AS repourl "
 		"FROM packages ";
 
-	assert(pattern != NULL && pattern[0] != '\0');
+	if (pattern == NULL || pattern[0] == '\0')
+		return (NULL);
 
 	sql = sbuf_new_auto();
-	sbuf_printf(sql, multireposql, repo->name);
+	sbuf_printf(sql, multireposql, repo->name, repo->url);
 
 	/* close the UNIONs and build the search query */
 	sbuf_cat(sql, "WHERE ");

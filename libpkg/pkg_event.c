@@ -336,7 +336,7 @@ pipeevent(struct pkg_event *ev)
 			ev->e_incremental_update.processed);
 		break;
 	case PKG_EVENT_QUERY_YESNO:
-		sbuf_printf(msg, "{\"type\": \"QUERY_YESNO\", "
+		sbuf_printf(msg, "{ \"type\": \"QUERY_YESNO\", "
 		    "\"data\": {"
 			"\"msg\": \"%s\","
 			"\"default\": \"%d\""
@@ -344,7 +344,7 @@ pipeevent(struct pkg_event *ev)
 			ev->e_query_yesno.deft);
 		break;
 	case PKG_EVENT_QUERY_SELECT:
-		sbuf_printf(msg, "{\"type\": \"QUERY_SELECT\", "
+		sbuf_printf(msg, "{ \"type\": \"QUERY_SELECT\", "
 		    "\"data\": {"
 			"\"msg\": \"%s\","
 			"\"ncnt\": \"%d\","
@@ -360,6 +360,15 @@ pipeevent(struct pkg_event *ev)
 		}
 		sbuf_printf(msg, "{ \"text\": \"%s\" } ] }}",
 			ev->e_query_select.items[i]);
+		break;
+	case PKG_EVENT_PROGRESS_START:
+		sbuf_printf(msg, "{ \"type\": \"INFO_PROGRESS_START\", "
+		  "\"data\": {}}");
+		break;
+	case PKG_EVENT_PROGRESS_TICK:
+		sbuf_printf(msg, "{ \"type\": \"INFO_PROGRESS_TICK\", "
+		  "\"data\": { \"current\": %ld, \"total\" : %ld}}",
+		  ev->e_progress_tick.current, ev->e_progress_tick.total);
 		break;
 	case PKG_EVENT_BACKUP:
 	case PKG_EVENT_RESTORE:

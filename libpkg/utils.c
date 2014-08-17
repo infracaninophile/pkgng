@@ -146,6 +146,54 @@ mkdirs(const char *_path)
 
 	return (EPKG_OK);
 }
+int
+file_to_bufferat(int dfd, const char *path, char **buffer, off_t *sz)
+{
+	int fd = -1;
+	struct stat st;
+	int retcode = EPKG_OK;
+
+	assert(path != NULL && path[0] != '\0');
+	assert(buffer != NULL);
+	assert(sz != NULL);
+
+	if ((fd = openat(dfd, path, O_RDONLY)) == -1) {
+		pkg_emit_errno("openat", path);
+		retcode = EPKG_FATAL;
+		goto cleanup;
+	}
+
+	if (fstatat(dfd, path, &st, 0) == -1) {
+		pkg_emit_errno("fstatat", path);
+		retcode = EPKG_FATAL;
+		goto cleanup;
+	}
+
+	if ((*buffer = malloc(st.st_size + 1)) == NULL) {
+		pkg_emit_errno("malloc", "");
+		retcode = EPKG_FATAL;
+		goto cleanup;
+	}
+
+	if (read(fd, *buffer, st.st_size) == -1) {
+		pkg_emit_errno("read", path);
+		retcode = EPKG_FATAL;
+		goto cleanup;
+	}
+
+	cleanup:
+	if (fd >= 0)
+		close(fd);
+
+	if (retcode == EPKG_OK) {
+		(*buffer)[st.st_size] = '\0';
+		*sz = st.st_size;
+	} else {
+		*buffer = NULL;
+		*sz = -1;
+	}
+	return (retcode);
+}
 
 int
 file_to_buffer(const char *path, char **buffer, off_t *sz)
@@ -356,13 +404,31 @@ sha256_hash(unsigned char hash[SHA256_DIGEST_LENGTH],
 }
 
 int
+sha256_fileat(int rootfd, const char *path,
+    char out[SHA256_DIGEST_LENGTH * 2 + 1])
+{
+	int fd, ret;
+
+	if ((fd = openat(rootfd, path, O_RDONLY)) == -1) {
+		pkg_emit_errno("openat", path);
+		return (EPKG_FATAL);
+	}
+
+	ret = sha256_fd(fd, out);
+
+	close(fd);
+
+	return (ret);
+}
+
+int
 sha256_file(const char *path, char out[SHA256_DIGEST_LENGTH * 2 + 1])
 {
 	int fd;
 	int ret;
 
 	if ((fd = open(path, O_RDONLY)) == -1) {
-		pkg_emit_errno("fopen", path);
+		pkg_emit_errno("open", path);
 		return (EPKG_FATAL);
 	}
 
@@ -465,17 +531,17 @@ is_conf_file(const char *path, char *newpath, size_t len)
 }
 
 bool
-check_for_hardlink(struct hardlinks *hl, struct stat *st)
+check_for_hardlink(struct hardlinks **hl, struct stat *st)
 {
 	struct hardlinks *h;
 
-	HASH_FIND_INO(hl, &st->st_ino, h);
+	HASH_FIND_INO(*hl, &st->st_ino, h);
 	if (h != NULL)
 		return (true);
 
 	h = malloc(sizeof(struct hardlinks));
 	h->inode = st->st_ino;
-	HASH_ADD_INO(hl, inode, h);
+	HASH_ADD_INO(*hl, inode, h);
 
 	return (false);
 }
@@ -876,20 +942,12 @@ print_trace(void)
 #endif
 }
 
-int
-pkg_symlink_cksum(const char *path, const char *root, char *cksum)
+static int
+pkg_symlink_cksum_readlink(const char *linkbuf, int linklen, const char *root,
+    char *cksum)
 {
-	char linkbuf[MAXPATHLEN];
 	const char *lnk;
-	int ret;
 
-	if ((ret = readlink(path, linkbuf, sizeof(linkbuf) - 1)) == -1) {
-		pkg_emit_errno("pkg_symlink_cksum", "readlink failed");
-		return (EPKG_FATAL);
-	}
-
-	/* Null terminate */
-	linkbuf[ret] = '\0';
 	lnk = linkbuf;
 	if (root != NULL) {
 		/* Skip root from checksum, as it is meaningless */
@@ -901,7 +959,38 @@ pkg_symlink_cksum(const char *path, const char *root, char *cksum)
 	while(*lnk == '/')
 		lnk ++;
 
-	sha256_buf(lnk, ret, cksum);
+	sha256_buf(lnk, linklen, cksum);
 
 	return (EPKG_OK);
+}
+
+int
+pkg_symlink_cksum(const char *path, const char *root, char *cksum)
+{
+	char linkbuf[MAXPATHLEN];
+	int linklen;
+
+	if ((linklen = readlink(path, linkbuf, sizeof(linkbuf) - 1)) == -1) {
+		pkg_emit_errno("pkg_symlink_cksum", "readlink failed");
+		return (EPKG_FATAL);
+	}
+	linkbuf[linklen] = '\0';
+
+	return (pkg_symlink_cksum_readlink(linkbuf, linklen, root, cksum));
+}
+
+int
+pkg_symlink_cksumat(int fd, const char *path, const char *root, char *cksum)
+{
+	char linkbuf[MAXPATHLEN];
+	int linklen;
+
+	if ((linklen = readlinkat(fd, path, linkbuf, sizeof(linkbuf) - 1)) ==
+	    -1) {
+		pkg_emit_errno("pkg_symlink_cksum", "readlink failed");
+		return (EPKG_FATAL);
+	}
+	linkbuf[linklen] = '\0';
+
+	return (pkg_symlink_cksum_readlink(linkbuf, linklen, root, cksum));
 }

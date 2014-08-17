@@ -738,6 +738,43 @@ pkg_parse_manifest(struct pkg *pkg, char *buf, size_t len, struct pkg_manifest_k
 }
 
 int
+pkg_parse_manifest_fileat(int dfd, struct pkg *pkg, const char *file,
+    struct pkg_manifest_key *keys)
+{
+	struct ucl_parser *p = NULL;
+	ucl_object_t *obj = NULL;
+	int rc;
+	char *data;
+	off_t sz = 0;
+
+	assert(pkg != NULL);
+	assert(file != NULL);
+
+	pkg_debug(1, "Parsing manifest from '%s'", file);
+
+	errno = 0;
+
+	if ((rc = file_to_bufferat(dfd, file, &data, &sz)) != EPKG_OK)
+		return (EPKG_FATAL);
+
+	p = ucl_parser_new(0);
+	if (!ucl_parser_add_string(p, data, sz)) {
+		pkg_emit_error("manifest parsing error: %s", ucl_parser_get_error(p));
+		ucl_parser_free(p);
+		return (EPKG_FATAL);
+	}
+
+	obj = ucl_parser_get_object(p);
+	rc = parse_manifest(pkg, keys, obj);
+
+	ucl_parser_free(p);
+	ucl_object_unref(obj);
+	free(data);
+
+	return (rc);
+}
+
+int
 pkg_parse_manifest_file(struct pkg *pkg, const char *file, struct pkg_manifest_key *keys)
 {
 	struct ucl_parser *p = NULL;
@@ -859,6 +896,7 @@ pkg_emit_object(struct pkg *pkg, short flags)
 	const char *script_types = NULL;
 	lic_t licenselogic;
 	int64_t pkgsize;
+	ucl_object_iter_t it = NULL;
 	ucl_object_t *annotations, *categories, *licenses;
 	ucl_object_t *map, *seq, *submap;
 	ucl_object_t *top = ucl_object_typed_new(UCL_OBJECT);
@@ -876,6 +914,7 @@ pkg_emit_object(struct pkg *pkg, short flags)
 		PKG_FLATSIZE,
 		-1
 	};
+	size_t key_len;
 
 	pkg_get(pkg, PKG_COMMENT, &comment, PKG_LICENSE_LOGIC, &licenselogic,
 	    PKG_DESC, &desc, PKG_MESSAGE, &message, PKG_PKGSIZE, &pkgsize,
@@ -1025,16 +1064,22 @@ pkg_emit_object(struct pkg *pkg, short flags)
 	if (map)
 		ucl_object_insert_key(top, map, "options", 7, false);
 
-	/* XXXB: Fix this code please */
-#if 0
 	if (annotations != NULL) {
-		/* Remove internal only annotations */
-		ucl_object_delete_keyl(annotations, "repository", 10);
-		ucl_object_delete_keyl(annotations, "relocated", 9);
-		ucl_object_insert_key(top,
-		    ucl_object_ref(annotations), "annotations", 11, false);
+		it = NULL;
+		map = ucl_object_typed_new(UCL_OBJECT);
+		/* Add annotations except for internal ones. */
+		while ((o = ucl_iterate_object(annotations, &it, true))) {
+			if ((key = ucl_object_keyl(o, &key_len)) == NULL)
+				continue;
+			/* Internal annotations. */
+			if (strcmp(key, "repository") == 0 ||
+			    strcmp(key, "relocated") == 0)
+				continue;
+			ucl_object_insert_key(map, ucl_object_ref(o), key,
+			    key_len, true);
+		}
+		ucl_object_insert_key(top, map, "annotations", 11, false);
 	}
-#endif
 
 	if ((flags & PKG_MANIFEST_EMIT_COMPACT) == 0) {
 		if ((flags & PKG_MANIFEST_EMIT_NOFILES) == 0) {

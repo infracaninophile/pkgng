@@ -56,6 +56,7 @@
 #include <jail.h>
 #include <sys/jail.h>
 #endif
+#include <signal.h>
 
 #include <pkg.h>
 
@@ -430,7 +431,7 @@ export_arg_option (char *arg)
 }
 
 static void
-start_process_worker(void)
+start_process_worker(char *const *save_argv)
 {
 	int	ret = EX_OK;
 	int	status;
@@ -446,9 +447,12 @@ start_process_worker(void)
 	while (1) {
 		child_pid = fork();
 
-		if (child_pid == 0)
+		if (child_pid == 0) {
+			/* Load the new Pkg image */
+			if (ret == EX_NEEDRESTART)
+				execvp(getprogname(), save_argv);
 			return;
-		else {
+		} else {
 			if (child_pid == -1)
 				err(EX_OSERR, "Failed to fork worker process");
 
@@ -668,7 +672,6 @@ main(int argc, char **argv)
 		{ "config",		required_argument,	NULL,	'C' },
 		{ "repo-conf-dir",	required_argument,	NULL,	'R' },
 		{ "list",		no_argument,		NULL,	'l' },
-		{ "check-activation",	no_argument,		NULL,	'N' },
 		{ "version",		no_argument,		NULL,	'v' },
 		{ "option",		required_argument,	NULL,	'o' },
 		{ NULL,			0,			NULL,	0   },
@@ -676,6 +679,9 @@ main(int argc, char **argv)
 
 	/* Set stdout unbuffered */
 	setvbuf(stdout, NULL, _IONBF, 0);
+
+	/* Ignore SIGPIPE */
+	signal(SIGPIPE, SIG_IGN);
 
 	if (argc < 2)
 		usage(NULL, NULL, stderr, PKG_USAGE_INVALID_ARGUMENTS, "not enough arguments");
@@ -688,6 +694,8 @@ main(int argc, char **argv)
 
 	if (setenv("POSIXLY_CORRECT", "1",  1) == -1)
 		err(EX_SOFTWARE, "setenv() failed");
+
+	save_argv = argv;
 
 #ifdef HAVE_LIBJAIL
 	while ((ch = getopt_long(argc, argv, "+dj:c:C:R:lNvo:", longopts, NULL)) != -1) {
@@ -750,7 +758,7 @@ main(int argc, char **argv)
 	optind = 1;
 
 	if (debug == 0 && version == 0)
-		start_process_worker();
+		start_process_worker(save_argv);
 
 #ifdef HAVE_ARC4RANDOM
 	/* Ensure that random is stirred after a possible fork */
@@ -782,7 +790,7 @@ main(int argc, char **argv)
 #endif
 
 	if (!pkg_compiled_for_same_os_major())
-		warnx("Major version upgrade detected.  Running \"pkg-static "
+		warnx("Warning: Major version upgrade detected.  Running \"pkg-static "
 		      "install -f pkg\" recommended");
 
 	if (pkg_init(conffile, reposdir) != EPKG_OK)

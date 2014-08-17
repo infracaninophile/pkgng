@@ -256,6 +256,12 @@ pkg_add_check_pkg_archive(struct pkgdb *db, struct pkg *pkg,
 			pkg_inst = NULL;
 			return (EPKG_INSTALLED);
 		}
+		else if (pkg_is_locked(pkg_inst)) {
+			pkg_emit_locked(pkg_inst);
+			pkg_free(pkg_inst);
+			pkg_inst = NULL;
+			return (EPKG_INSTALLED);
+		}
 		else {
 			pkg_emit_notice("package %s is already installed, forced install",
 				name);
@@ -488,6 +494,13 @@ pkg_add_common(struct pkgdb *db, const char *path, unsigned flags,
 		pkg_delete_files(pkg, 2);
 		pkg_delete_dirs(db, pkg);
 		goto cleanup_reg;
+	} else if (!extract) {
+		/*
+		 * Meta packages will have no non-meta files. Still display
+		 * 100% progress.
+		 */
+		pkg_emit_progress_start(NULL);
+		pkg_emit_progress_tick(1,1);
 	}
 
 	/*
@@ -547,8 +560,7 @@ pkg_add_upgrade(struct pkgdb *db, const char *path, unsigned flags,
     struct pkg *rp, struct pkg *lp)
 {
 	if (pkgdb_ensure_loaded(db, lp,
-			      PKG_LOAD_FILES|PKG_LOAD_SCRIPTS|PKG_LOAD_DIRS) !=
-			EPKG_OK)
+	    PKG_LOAD_FILES|PKG_LOAD_SCRIPTS|PKG_LOAD_DIRS) != EPKG_OK)
 		return (EPKG_FATAL);
 
 	return pkg_add_common(db, path, flags, keys, location, rp, lp);

@@ -45,7 +45,6 @@
 #include <assert.h>
 #include <ctype.h>
 #include <dlfcn.h>
-#include <err.h>
 #include <fcntl.h>
 #include <gelf.h>
 #include <libgen.h>
@@ -74,6 +73,9 @@
 #define _PATH_ELF32_HINTS       "/var/run/ld-elf32.so.hints"
 
 #define roundup2(x, y)	(((x)+((y)-1))&(~((y)-1))) /* if y is powers of two */
+
+static const char * elf_corres_to_string(const struct _elf_corres* m, int e);
+static int elf_string_to_corres(const struct _elf_corres* m, const char *s);
 
 static int
 filter_system_shlibs(const char *name, char *path, size_t pathlen)
@@ -127,11 +129,84 @@ add_shlibs_to_pkg(__unused void *actdata, struct pkg *pkg, const char *fpath,
 		}
 
 		pkg_get(pkg, PKG_NAME, &pkgname, PKG_VERSION, &pkgversion);
-		warnx("(%s-%s) %s - shared library %s not found",
-		      pkgname, pkgversion, fpath, name);
+		pkg_emit_notice("(%s-%s) %s - required shared library %s not "
+		    "found", pkgname, pkgversion, fpath, name);
 
 		return (EPKG_FATAL);
 	}
+}
+
+static bool
+shlib_valid_abi(const char *fpath, GElf_Ehdr *hdr, const char *abi)
+{
+	int semicolon;
+	const char *p, *t;
+	char arch[64], wordsize[64];
+	int wclass;
+	const char *shlib_arch;
+
+	/*
+	 * ABI string is in format:
+	 * <osname>:<osversion>:<arch>:<wordsize>[.other]
+	 * We need here arch and wordsize only
+	 */
+	arch[0] = '\0';
+	wordsize[0] = '\0';
+	p = abi;
+	for(semicolon = 0; semicolon < 3 && p != NULL; semicolon ++, p ++) {
+		p = strchr(p, ':');
+		if (p != NULL) {
+			switch(semicolon) {
+			case 1:
+				/* We have arch here */
+				t = strchr(p + 1, ':');
+				/* Abi line is likely invalid */
+				if (t == NULL)
+					return (true);
+				strlcpy(arch, p + 1, MIN((long)sizeof(arch), t - p));
+				break;
+			case 2:
+				t = strchr(p + 1, ':');
+				if (t == NULL)
+					strlcpy(wordsize, p + 1, sizeof(wordsize));
+				else
+					strlcpy(wordsize, p + 1, MIN((long)sizeof(wordsize), t - p));
+				break;
+			}
+		}
+	}
+	/* Invalid ABI line */
+	if (arch[0] == '\0' || wordsize[0] == '\0')
+		return (true);
+
+	shlib_arch = elf_corres_to_string(mach_corres, (int)hdr->e_machine);
+	if (shlib_arch == NULL)
+		return (true);
+
+	wclass = elf_string_to_corres(wordsize_corres, wordsize);
+	if (wclass == -1)
+		return (true);
+
+
+	/*
+	 * Compare wordsize first as the arch for amd64/i386 is an abmiguous
+	 * 'x86'
+	 */
+	if ((int)hdr->e_ident[EI_CLASS] != wclass) {
+		pkg_debug(1, "not valid elf class for shlib: %s: %s",
+		    elf_corres_to_string(wordsize_corres,
+		    (int)hdr->e_ident[EI_CLASS]),
+		    fpath);
+		return (false);
+	}
+
+	if (strcmp(shlib_arch, arch) != 0) {
+		pkg_debug(1, "not valid abi for shlib: %s: %s", shlib_arch,
+		    fpath);
+		return (false);
+	}
+
+	return (true);
 }
 
 static int
@@ -154,12 +229,14 @@ analyse_elf(struct pkg *pkg, const char *fpath,
 	size_t sh_link = 0;
 	size_t dynidx;
 	const char *osname;
+	const char *myarch;
 	const char *shlib;
 
 	bool developer = false;
 	bool is_shlib = false;
 
 	developer = pkg_object_bool(pkg_config_get("DEVELOPER_MODE"));
+	myarch = pkg_object_string(pkg_config_get("ABI"));
 
 	int fd;
 
@@ -233,6 +310,11 @@ analyse_elf(struct pkg *pkg, const char *fpath,
 	if (dynamic == NULL) {
 		ret = EPKG_END;
 		goto cleanup; /* not a dynamically linked elf: no results */
+	}
+
+	if (!shlib_valid_abi(fpath, &elfhdr, myarch)) {
+		ret = EPKG_END;
+		goto cleanup; /* Invalid ABI */
 	}
 
 	if (note != NULL) {
@@ -363,11 +445,16 @@ int
 pkg_analyse_files(struct pkgdb *db, struct pkg *pkg, const char *stage)
 {
 	struct pkg_file *file = NULL;
+	struct pkg_shlib *sh, *shtmp, *found;
 	int ret = EPKG_OK;
 	char fpath[MAXPATHLEN];
-	bool developer = false;
+	const char *origin;
+	bool developer = false, failures = false;
 
 	developer = pkg_object_bool(pkg_config_get("DEVELOPER_MODE"));
+
+	pkg_list_free(pkg, PKG_SHLIBS_REQUIRED);
+	pkg_list_free(pkg, PKG_SHLIBS_PROVIDED);
 
 	if (elf_version(EV_CURRENT) == EV_NONE)
 		return (EPKG_FATAL);
@@ -392,45 +479,12 @@ pkg_analyse_files(struct pkgdb *db, struct pkg *pkg, const char *stage)
 
 		ret = analyse_elf(pkg, fpath, add_shlibs_to_pkg, db);
 		if (developer) {
-			if (ret != EPKG_OK && ret != EPKG_END)
-				goto cleanup;
+			if (ret != EPKG_OK && ret != EPKG_END) {
+				failures = true;
+				continue;
+			}
 			analyse_fpath(pkg, fpath);
 		}
-	}
-
-	ret = EPKG_OK;
-
-cleanup:
-	shlib_list_free();
-
-	return (ret);
-}
-
-int
-pkg_register_shlibs(struct pkg *pkg, const char *root)
-{
-	struct pkg_file        *file = NULL;
-	char fpath[MAXPATHLEN];
-	struct pkg_shlib *sh, *shtmp, *found;
-	const char *origin;
-
-	pkg_list_free(pkg, PKG_SHLIBS_REQUIRED);
-
-	if (elf_version(EV_CURRENT) == EV_NONE)
-		return (EPKG_FATAL);
-
-	shlib_list_init();
-	if (shlib_list_from_elf_hints(_PATH_ELF_HINTS) != EPKG_OK) {
-		shlib_list_free();
-		return (EPKG_FATAL);
-	}
-
-	while(pkg_files(pkg, &file) == EPKG_OK) {
-		if (root != NULL) {
-			snprintf(fpath, sizeof(fpath), "%s%s", root, pkg_file_path(file));
-			analyse_elf(pkg, fpath, add_shlibs_to_pkg, NULL);
-		} else
-			analyse_elf(pkg, pkg_file_path(file), add_shlibs_to_pkg, NULL);
 	}
 
 	pkg_get(pkg, PKG_ORIGIN, &origin);
@@ -440,14 +494,22 @@ pkg_register_shlibs(struct pkg *pkg, const char *root)
 	HASH_ITER(hh, pkg->shlibs_required, sh, shtmp) {
 		HASH_FIND_STR(pkg->shlibs_provided, pkg_shlib_name(sh), found);
 		if (found != NULL) {
-			pkg_debug(2, "remove %s from required shlibs as the package %s provides "
-					"this library itself", pkg_shlib_name(sh), origin);
+			pkg_debug(2, "remove %s from required shlibs as the "
+			    "package %s provides this library itself",
+			    pkg_shlib_name(sh), origin);
 			HASH_DEL(pkg->shlibs_required, sh);
 		}
 	}
 
+	if (failures)
+		goto cleanup;
+
+	ret = EPKG_OK;
+
+cleanup:
 	shlib_list_free();
-	return (EPKG_OK);
+
+	return (ret);
 }
 
 static const char *
@@ -460,6 +522,18 @@ elf_corres_to_string(const struct _elf_corres* m, int e)
 			return (m[i].string);
 
 	return ("unknown");
+}
+
+static int
+elf_string_to_corres(const struct _elf_corres* m, const char *s)
+{
+	int i = 0;
+
+	for (i = 0; m[i].string != NULL; i++)
+		if (strcmp(m[i].string, s) == 0)
+			return (m[i].elf_nb);
+
+	return (-1);
 }
 
 static const char *

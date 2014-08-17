@@ -86,6 +86,7 @@ pkg_new(struct pkg **pkg, pkg_t type)
 
 	(*pkg)->fields = ucl_object_typed_new(UCL_OBJECT);
 	(*pkg)->type = type;
+	(*pkg)->rootfd = -1;
 
 	return (EPKG_OK);
 }
@@ -115,6 +116,10 @@ pkg_reset(struct pkg *pkg, pkg_t type)
 	pkg_list_free(pkg, PKG_GROUPS);
 	pkg_list_free(pkg, PKG_SHLIBS_REQUIRED);
 	pkg_list_free(pkg, PKG_SHLIBS_PROVIDED);
+	pkg_list_free(pkg, PKG_PROVIDES);
+	if (pkg->rootfd != -1)
+		close(pkg->rootfd);
+	pkg->rootfd = -1;
 
 	pkg->type = type;
 }
@@ -139,6 +144,8 @@ pkg_free(struct pkg *pkg)
 	pkg_list_free(pkg, PKG_GROUPS);
 	pkg_list_free(pkg, PKG_SHLIBS_REQUIRED);
 	pkg_list_free(pkg, PKG_SHLIBS_PROVIDED);
+	if (pkg->rootfd != -1)
+		close(pkg->rootfd);
 
 	free(pkg);
 }
@@ -388,6 +395,29 @@ pkg_set_mtree(struct pkg *pkg, const char *mtree) {
 	return (pkg_set(pkg, PKG_MTREE, mtree));
 }
 
+int
+pkg_set_from_fileat(int fd, struct pkg *pkg, pkg_attr attr, const char *path,
+    bool trimcr)
+{
+	char *buf = NULL;
+	off_t size = 0;
+	int ret = EPKG_OK;
+
+	assert(pkg != NULL);
+	assert(path != NULL);
+
+	if ((ret = file_to_bufferat(fd, path, &buf, &size)) !=  EPKG_OK)
+		return (ret);
+
+	while (trimcr && buf[strlen(buf) - 1] == '\n')
+		buf[strlen(buf) - 1] = '\0';
+
+	ret = pkg_set(pkg, attr, buf);
+
+	free(buf);
+
+	return (ret);
+}
 
 int
 pkg_set_from_file(struct pkg *pkg, pkg_attr attr, const char *path, bool trimcr)
@@ -833,6 +863,61 @@ pkg_addscript(struct pkg *pkg, const char *data, pkg_script type)
 }
 
 int
+pkg_addscript_fileat(int fd, struct pkg *pkg, const char *filename)
+{
+	char *data;
+	pkg_script type;
+	int ret = EPKG_OK;
+	off_t sz = 0;
+
+	assert(pkg != NULL);
+	assert(filename != NULL);
+
+	pkg_debug(1, "Adding script from: '%s'", filename);
+
+	if ((ret = file_to_bufferat(fd, filename, &data, &sz)) != EPKG_OK)
+		return (ret);
+
+	if (strcmp(filename, "pkg-pre-install") == 0 ||
+			strcmp(filename, "+PRE_INSTALL") == 0) {
+		type = PKG_SCRIPT_PRE_INSTALL;
+	} else if (strcmp(filename, "pkg-post-install") == 0 ||
+			strcmp(filename, "+POST_INSTALL") == 0) {
+		type = PKG_SCRIPT_POST_INSTALL;
+	} else if (strcmp(filename, "pkg-install") == 0 ||
+			strcmp(filename, "+INSTALL") == 0) {
+		type = PKG_SCRIPT_INSTALL;
+	} else if (strcmp(filename, "pkg-pre-deinstall") == 0 ||
+			strcmp(filename, "+PRE_DEINSTALL") == 0) {
+		type = PKG_SCRIPT_PRE_DEINSTALL;
+	} else if (strcmp(filename, "pkg-post-deinstall") == 0 ||
+			strcmp(filename, "+POST_DEINSTALL") == 0) {
+		type = PKG_SCRIPT_POST_DEINSTALL;
+	} else if (strcmp(filename, "pkg-deinstall") == 0 ||
+			strcmp(filename, "+DEINSTALL") == 0) {
+		type = PKG_SCRIPT_DEINSTALL;
+	} else if (strcmp(filename, "pkg-pre-upgrade") == 0 ||
+			strcmp(filename, "+PRE_UPGRADE") == 0) {
+		type = PKG_SCRIPT_PRE_UPGRADE;
+	} else if (strcmp(filename, "pkg-post-upgrade") == 0 ||
+			strcmp(filename, "+POST_UPGRADE") == 0) {
+		type = PKG_SCRIPT_POST_UPGRADE;
+	} else if (strcmp(filename, "pkg-upgrade") == 0 ||
+			strcmp(filename, "+UPGRADE") == 0) {
+		type = PKG_SCRIPT_UPGRADE;
+	} else {
+		pkg_emit_error("unknown script '%s'", filename);
+		ret = EPKG_FATAL;
+		goto cleanup;
+	}
+
+	ret = pkg_addscript(pkg, data, type);
+cleanup:
+	free(data);
+	return (ret);
+}
+
+int
 pkg_addscript_file(struct pkg *pkg, const char *path)
 {
 	char *filename;
@@ -1026,20 +1111,22 @@ pkg_addoption_description(struct pkg *pkg, const char *key,
 int
 pkg_addshlib_required(struct pkg *pkg, const char *name)
 {
-	struct pkg_shlib *s = NULL;
+	struct pkg_shlib *s = NULL, *f;
 	const char *origin;
+
 
 	assert(pkg != NULL);
 	assert(name != NULL && name[0] != '\0');
 
-	HASH_FIND_STR(pkg->shlibs_required, name, s);
-	/* silently ignore duplicates in case of shlibs */
-	if (s != NULL)
-		return (EPKG_OK);
-
 	pkg_shlib_new(&s);
-
 	sbuf_set(&s->name, name);
+
+	HASH_FIND_STR(pkg->shlibs_required, pkg_shlib_name(s), f);
+	/* silently ignore duplicates in case of shlibs */
+	if (f != NULL) {
+		pkg_shlib_free(s);
+		return (EPKG_OK);
+	}
 
 	HASH_ADD_KEYPTR(hh, pkg->shlibs_required,
 	    pkg_shlib_name(s),
@@ -1055,20 +1142,20 @@ pkg_addshlib_required(struct pkg *pkg, const char *name)
 int
 pkg_addshlib_provided(struct pkg *pkg, const char *name)
 {
-	struct pkg_shlib *s = NULL;
+	struct pkg_shlib *s = NULL, *f;
 	const char *origin;
 
 	assert(pkg != NULL);
 	assert(name != NULL && name[0] != '\0');
 
-	HASH_FIND_STR(pkg->shlibs_provided, name, s);
-	/* silently ignore duplicates in case of shlibs */
-	if (s != NULL)
-		return (EPKG_OK);
-
 	pkg_shlib_new(&s);
-
 	sbuf_set(&s->name, name);
+	HASH_FIND_STR(pkg->shlibs_provided, pkg_shlib_name(s), f);
+	/* silently ignore duplicates in case of shlibs */
+	if (f != NULL) {
+		pkg_shlib_free(s);
+		return (EPKG_OK);
+	}
 
 	HASH_ADD_KEYPTR(hh, pkg->shlibs_provided,
 	    pkg_shlib_name(s),
@@ -1628,7 +1715,7 @@ pkg_recompute(struct pkgdb *db, struct pkg *pkg)
 			}
 
 			if (st.st_nlink > 1)
-				regular = !check_for_hardlink(hl, &st);
+				regular = !check_for_hardlink(&hl, &st);
 
 			if (regular)
 				flatsize += st.st_size;
@@ -1715,4 +1802,24 @@ pkg_has_dir(struct pkg *p, const char *path)
 	HASH_FIND_STR(p->dirs, path, d);
 
 	return (d != NULL ? true : false);
+}
+
+int
+pkg_open_root_fd(struct pkg *pkg)
+{
+	const ucl_object_t 	*obj, *an;
+
+	if (pkg->rootfd != -1)
+		return (EPKG_OK);
+
+	pkg_get(pkg, PKG_ANNOTATIONS, &an);
+	obj = pkg_object_find(an, "relocated");
+
+	if ((pkg->rootfd = open(obj ? pkg_object_string(obj) : "/" ,
+	    O_DIRECTORY)) >= 0 )
+		return (EPKG_OK);
+
+	pkg_emit_errno("open", obj ? pkg_object_string(obj) : "/");
+
+	return (EPKG_FATAL);
 }

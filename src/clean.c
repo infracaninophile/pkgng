@@ -67,6 +67,7 @@ static int
 add_to_dellist(struct dl_head *dl,  const char *path)
 {
 	struct deletion_list	*dl_entry;
+	static bool first_entry = true;
 
 	assert(path != NULL);
 
@@ -77,6 +78,15 @@ add_to_dellist(struct dl_head *dl,  const char *path)
 	}
 
 	dl_entry->path = strdup(path);
+
+	if (!quiet) {
+		if (first_entry) {
+			first_entry = false;
+			printf("The following package files will be deleted:"
+			    "\n");
+		}
+		printf("\t%s\n", dl_entry->path);
+	}
 
 	STAILQ_INSERT_TAIL(dl, dl_entry, next);
 
@@ -96,21 +106,23 @@ free_dellist(struct dl_head *dl)
 }
 
 static int
-delete_dellist(struct dl_head *dl)
+delete_dellist(struct dl_head *dl, int total)
 {
 	struct deletion_list	*dl_entry;
 	int			retcode = EX_OK;
-	int			count = 0;
+	int			count = 0, processed = 0;
 
+	progressbar_start("Deleting files");
 	STAILQ_FOREACH(dl_entry, dl, next) {
-		if (!quiet)
-			printf("\t%s\n", dl_entry->path);
 		if (unlink(dl_entry->path) != 0) {
 			warn("unlink(%s)", dl_entry->path);
 			count++;
 			retcode = EX_SOFTWARE;
 		}
+		++processed;
+		progressbar_tick(processed, total);
 	}
+	progressbar_tick(processed, total);
 
 	if (!quiet) {
 		if (retcode == EX_OK)
@@ -170,8 +182,7 @@ exec_clean(int argc, char **argv)
 	bool		 all = false;
 	bool		 sumloaded = false;
 	int		 retcode;
-	int		 ret;
-	int		 ch;
+	int		 ch, cnt = 0;
 	size_t		 total = 0, slen;
 	ssize_t		 link_len;
 	char		 size[7];
@@ -249,8 +260,11 @@ exec_clean(int argc, char **argv)
 			continue;
 
 		if (all) {
-			ret = add_to_dellist(&dl, ent->fts_path);
-			total += ent->fts_statp->st_size;
+			retcode = add_to_dellist(&dl, ent->fts_path);
+			if (retcode == EPKG_OK) {
+				total += ent->fts_statp->st_size;
+				++cnt;
+			}
 			continue;
 		}
 
@@ -282,8 +296,11 @@ exec_clean(int argc, char **argv)
 		if (extract_filename_sum(name, csum))
 			HASH_FIND_STR(sumlist, csum, s);
 		if (s == NULL) {
-			ret = add_to_dellist(&dl, ent->fts_path);
-			total += ent->fts_statp->st_size;
+			retcode = add_to_dellist(&dl, ent->fts_path);
+			if (retcode == EPKG_OK) {
+				total += ent->fts_statp->st_size;
+				++cnt;
+			}
 			continue;
 		}
 	}
@@ -304,8 +321,8 @@ exec_clean(int argc, char **argv)
 	printf("The cleanup will free %s\n", size);
 	if (!dry_run) {
 			if (query_yesno(false,
-			  "\nProceed with cleaning the cache [y/N]: ")) {
-				retcode = delete_dellist(&dl);
+			  "\nProceed with cleaning the cache? [y/N]: ")) {
+				retcode = delete_dellist(&dl, cnt);
 			}
 	} else {
 		retcode = EX_OK;

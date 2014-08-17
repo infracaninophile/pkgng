@@ -38,7 +38,7 @@
 static sql_prstmt sql_prepared_statements[PRSTMT_LAST] = {
 	[PKG] = {
 		NULL,
-		"INSERT INTO packages ("
+		"INSERT OR REPLACE INTO packages ("
 		"origin, name, version, comment, desc, arch, maintainer, www, "
 		"prefix, pkgsize, flatsize, licenselogic, cksum, path, manifestdigest, olddigest"
 		")"
@@ -47,7 +47,7 @@ static sql_prstmt sql_prepared_statements[PRSTMT_LAST] = {
 	},
 	[DEPS] = {
 		NULL,
-		"INSERT INTO deps (origin, name, version, package_id) "
+		"INSERT OR REPLACE INTO deps (origin, name, version, package_id) "
 		"VALUES (?1, ?2, ?3, ?4)",
 		"TTTI",
 	},
@@ -92,13 +92,13 @@ static sql_prstmt sql_prepared_statements[PRSTMT_LAST] = {
 	},
 	[SHLIB_REQD] = {
 		NULL,
-		"INSERT OR ROLLBACK INTO pkg_shlibs_required(package_id, shlib_id) "
+		"INSERT OR IGNORE INTO pkg_shlibs_required(package_id, shlib_id) "
 		"VALUES (?1, (SELECT id FROM shlibs WHERE name = ?2))",
 		"IT",
 	},
 	[SHLIB_PROV] = {
 		NULL,
-		"INSERT OR ROLLBACK INTO pkg_shlibs_provided(package_id, shlib_id) "
+		"INSERT OR IGNORE INTO pkg_shlibs_provided(package_id, shlib_id) "
 		"VALUES (?1, (SELECT id FROM shlibs WHERE name = ?2))",
 		"IT",
 	},
@@ -134,7 +134,7 @@ static sql_prstmt sql_prepared_statements[PRSTMT_LAST] = {
 	},
 	[FTS_APPEND] = {
 		NULL,
-		"INSERT OR ROLLBACK INTO pkg_search(id, name, origin) "
+		"INSERT OR IGNORE INTO pkg_search(id, name, origin) "
 		"VALUES (?1, ?2 || '-' || ?3, ?4);",
 		"ITTT"
 	}

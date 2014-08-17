@@ -6,6 +6,7 @@ pkg_common_cflags=	-I$(top_srcdir)/libpkg \
 			-I$(top_srcdir)/external/libsbuf \
 			-I$(top_srcdir)/external/expat/lib \
 			-I$(top_srcdir)/external/libucl/include \
+			-I$(top_srcdir)/external/picosat \
 			-I$(top_srcdir)/external/uthash \
 			-I$(top_srcdir)/external/sqlite \
 			-I$(top_srcdir)/external/libyaml/include \
@@ -22,13 +23,14 @@ libpkg_la_SOURCES=	pkg.c \
 			pkg_audit.c \
 			pkg_checksum.c \
 			pkg_config.c \
-			pkg_conflicts.c \
 			pkg_cudf.c \
 			pkg_create.c \
 			pkg_delete.c \
 			pkg_elf.c \
 			pkg_event.c \
 			pkg_jobs.c \
+			pkg_jobs_conflicts.c \
+			pkg_jobs_universe.c \
 			pkg_manifest.c \
 			pkg_object.c \
 			pkg_ports.c \
@@ -56,6 +58,7 @@ libpkg_la_LIBADD=	$(top_builddir)/external/libucl.la \
 			$(top_builddir)/external/libyaml.la \
 			$(top_builddir)/external/libexpat.la \
 			$(top_builddir)/external/libsbuf.la \
+			$(top_builddir)/external/libpicosat.la \
 			@REPOS_LDADD@ \
 			@LIBELF_LIB@ \
 			@LIBEXECINFO_LIB@ \
@@ -67,7 +70,7 @@ libpkg_la_LIBADD=	$(top_builddir)/external/libucl.la \
 			-lm
 
 libpkg_la_LDFLAGS=	-version-info @LIBPKG_SO_VERSION@ -Wl,--version-script=$(srcdir)/libpkg.ver
-EXTRA_libpkg_la_DEPENDENCIES=	@REPOS_LDADD@
+EXTRA_libpkg_la_DEPENDENCIES=	@REPOS_LDADD@ libpkg.ver
 
 lib_LTLIBRARIES=	libpkg.la libpkg_static.la
 include_HEADERS=	pkg.h
@@ -77,11 +80,12 @@ libpkg_static_la_CFLAGS=	$(pkg_common_cflags) -static
 libpkg_static_la_LIBADD=	$(top_builddir)/external/libucl_static.la \
 			$(top_builddir)/external/libsqlite_static.la \
 			$(top_builddir)/external/libexpat_static.la \
+			$(top_builddir)/external/libpicosat_static.la \
 			$(top_builddir)/external/libyaml_static.la \
 			$(top_builddir)/external/libsbuf_static.la \
 			@REPOS_LDADD_STATIC@
 
-EXTRA_libpkg_static_la_DEPENDENCIES=	@REPOS_LDADD_STATIC@
+EXTRA_libpkg_static_la_DEPENDENCIES=	@REPOS_LDADD_STATIC@ libpkg.ver
 
 libpkg_static_la_LDFLAGS=	-all-static
 
@@ -92,6 +96,7 @@ noinst_HEADERS=		private/db_upgrades.h \
 			private/pkg.h \
 			private/pkg_printf.h \
 			private/pkgdb.h \
-			private/utils.h
+			private/utils.h \
+			private/pkg_jobs.h
 
 SUBDIRS = repo .

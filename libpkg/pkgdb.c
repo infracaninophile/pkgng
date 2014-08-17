@@ -771,7 +771,7 @@ pkgdb_access(unsigned mode, unsigned database)
 	/*
 	 * This will return one of:
 	 *
-	 * EPKG_NODB:  a database doesn't exist and we don't want to create
+	 * EPKG_ENODB:  a database doesn't exist and we don't want to create
 	 *             it, or dbdir doesn't exist
 	 * 
 	 * EPKG_INSECURE: the dbfile or one of the directories in the
@@ -826,8 +826,13 @@ pkgdb_access(unsigned mode, unsigned database)
 				continue;
 
 			retval = r->ops->access(r, mode);
-			if (retval != EPKG_OK)
+			if (retval != EPKG_OK) {
+				if (retval == EPKG_ENODB &&
+				    mode == PKGDB_MODE_READ)
+					pkg_emit_error("Repository %s missing."
+					    " 'pkg update' required", r->name);
 				return (retval);
+			}
 		}
 	}
 	return (retval);
@@ -868,7 +873,9 @@ pkgdb_open_repos(struct pkgdb *db, const char *reponame)
 				r->ops->init(r);
 				item->repo = r;
 				LL_PREPEND(db->repos, item);
-			}
+			} else
+				pkg_emit_error("Repository %s cannot be opened."
+				    " 'pkg update' required", r->name);
 		}
 	}
 
@@ -1355,13 +1362,13 @@ static sql_prstmt sql_prepared_statements[PRSTMT_LAST] = {
 	},
 	[SHLIBS_REQD] = {
 		NULL,
-		"INSERT INTO pkg_shlibs_required(package_id, shlib_id) "
+		"INSERT OR IGNORE INTO pkg_shlibs_required(package_id, shlib_id) "
 		"VALUES (?1, (SELECT id FROM shlibs WHERE name = ?2))",
 		"IT",
 	},
 	[SHLIBS_PROV] = {
 		NULL,
-		"INSERT INTO pkg_shlibs_provided(package_id, shlib_id) "
+		"INSERT OR IGNORE INTO pkg_shlibs_provided(package_id, shlib_id) "
 		"VALUES (?1, (SELECT id FROM shlibs WHERE name = ?2))",
 		"IT",
 	},
@@ -2952,6 +2959,8 @@ pkgdb_obtain_lock(struct pkgdb *db, pkgdb_lock_t type)
 
 	switch (type) {
 	case PKGDB_LOCK_READONLY:
+		if (!ucl_object_toboolean(pkg_config_get("READ_LOCK")))
+				return (EPKG_OK);
 		lock_sql = readonly_lock_sql;
 		pkg_debug(1, "want to get a read only lock on a database");
 		break;
@@ -3026,8 +3035,12 @@ pkgdb_release_lock(struct pkgdb *db, pkgdb_lock_t type)
 
 	switch (type) {
 	case PKGDB_LOCK_READONLY:
+		if (!ucl_object_toboolean(pkg_config_get("READ_LOCK")))
+			return (EPKG_OK);
+
 		unlock_sql = readonly_unlock_sql;
 		pkg_debug(1, "release a read only lock on a database");
+
 		break;
 	case PKGDB_LOCK_ADVISORY:
 		unlock_sql = advisory_unlock_sql;
@@ -3187,4 +3200,49 @@ pkgdb_end_solver(struct pkgdb *db)
 		"PRAGMA journal_mode = DELETE;";
 
 	return (sql_exec(db->sqlite, solver_sql));
+}
+
+int
+pkgdb_is_dir_used(struct pkgdb *db, const char *dir, int64_t *res)
+{
+	sqlite3_stmt *stmt;
+	int ret;
+	const char sql[] = ""
+		"SELECT count(package_id) FROM pkg_directories, directories "
+		"WHERE directory_id = directories.id AND directories.path = ?1;";
+
+	if (sqlite3_prepare_v2(db->sqlite, sql, -1, &stmt, NULL) != SQLITE_OK) {
+		ERROR_SQLITE(db->sqlite, sql);
+		return (EPKG_FATAL);
+	}
+
+	sqlite3_bind_text(stmt, 1, dir, -1, SQLITE_TRANSIENT);
+
+	ret = sqlite3_step(stmt);
+
+	if (ret == SQLITE_ROW)
+		*res = sqlite3_column_int64(stmt, 0);
+
+	sqlite3_finalize(stmt);
+
+	if (ret != SQLITE_ROW) {
+		ERROR_SQLITE(db->sqlite, sql);
+		return (EPKG_FATAL);
+	}
+
+	return (EPKG_OK);
+}
+
+int
+pkgdb_repo_count(struct pkgdb *db)
+{
+	struct _pkg_repo_list_item *cur;
+	int result = 0;
+
+	if (db != NULL) {
+		LL_FOREACH(db->repos, cur)
+			result ++;
+	}
+
+	return (result);
 }

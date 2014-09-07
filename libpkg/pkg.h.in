@@ -1388,6 +1388,12 @@ typedef enum {
 	PKG_EVENT_DEINSTALL_FINISHED,
 	PKG_EVENT_UPGRADE_BEGIN,
 	PKG_EVENT_UPGRADE_FINISHED,
+	PKG_EVENT_EXTRACT_BEGIN,
+	PKG_EVENT_EXTRACT_FINISHED,
+	PKG_EVENT_DELETE_FILES_BEGIN,
+	PKG_EVENT_DELETE_FILES_FINISHED,
+	PKG_EVENT_ADD_DEPS_BEGIN,
+	PKG_EVENT_ADD_DEPS_FINISHED,
 	PKG_EVENT_FETCHING,
 	PKG_EVENT_FETCH_BEGIN,
 	PKG_EVENT_FETCH_FINISHED,
@@ -1476,6 +1482,24 @@ struct pkg_event {
 			struct pkg *new;
 			struct pkg *old;
 		} e_upgrade_finished;
+		struct {
+			struct pkg *pkg;
+		} e_extract_begin;
+		struct {
+			struct pkg *pkg;
+		} e_extract_finished;
+		struct {
+			struct pkg *pkg;
+		} e_delete_files_begin;
+		struct {
+			struct pkg *pkg;
+		} e_delete_files_finished;
+		struct {
+			struct pkg *pkg;
+		} e_add_deps_begin;
+		struct {
+			struct pkg *pkg;
+		} e_add_deps_finished;
 		struct {
 			struct pkg *pkg;
 			struct pkg_dep *dep;
@@ -1788,5 +1812,7 @@ bool pkg_audit_is_vulnerable(struct pkg_audit *audit, struct pkg *pkg,
 		bool quiet, struct sbuf **result);
 		
 void pkg_audit_free (struct pkg_audit *audit);
+char *pkg_utils_tokenize(char **);
+int pkg_utils_count_spaces(const char *);
 
 #endif

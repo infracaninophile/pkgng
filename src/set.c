@@ -128,8 +128,7 @@ exec_set(int argc, char **argv)
 			yes = true;
 			break;
 		default:
-			if (oldorigin != NULL)
-				free(oldorigin);
+			free(oldorigin);
 			
 			usage_set();
 			return (EX_USAGE);
@@ -250,11 +249,8 @@ exec_set(int argc, char **argv)
 	} while (i < argc);
 
 cleanup:
-	if (oldorigin)
-		free(oldorigin);
-
-	if (pkg != NULL)
-		pkg_free(pkg);
+	free(oldorigin);
+	pkg_free(pkg);
 
 	pkgdb_release_lock(db, PKGDB_LOCK_EXCLUSIVE);
 	pkgdb_close(db);

@@ -27,14 +27,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/param.h>
 #include <sys/stat.h>
 
-#include <assert.h>
 #include <errno.h>
 #include <regex.h>
-#include <stdlib.h>
-#include <string.h>
 #include <fcntl.h>
 
 #include "pkg.h"
@@ -52,7 +48,6 @@ pkg_create_from_dir(struct pkg *pkg, const char *root,
 	struct pkg_dir	*dir = NULL;
 	char		*m;
 	int		 ret;
-	const char	*mtree;
 	bool		 developer;
 	struct stat	 st;
 	char		 sha256[SHA256_DIGEST_LENGTH * 2 + 1];
@@ -145,11 +140,6 @@ pkg_create_from_dir(struct pkg *pkg, const char *root,
 		packing_append_buffer(pkg_archive, sbuf_data(b), "+MANIFEST", sbuf_len(b));
 		sbuf_delete(b);
 	}
-
-	pkg_get(pkg, PKG_MTREE, &mtree);
-	if (mtree != NULL)
-		packing_append_buffer(pkg_archive, mtree, "+MTREE_DIRS",
-		    strlen(mtree));
 
 	while (pkg_files(pkg, &file) == EPKG_OK) {
 		const char *pkg_path = pkg_file_path(file);
@@ -351,11 +341,6 @@ pkg_create_staged(const char *outdir, pkg_formats format, const char *rootdir,
 		pkg_get_myarch(arch, BUFSIZ);
 		pkg_set(pkg, PKG_ARCH, arch);
 	}
-
-	/* if no mtree try to get it from a file */
-	pkg_get(pkg, PKG_MTREE, &buf);
-	if (buf == NULL)
-		pkg_load_from_file(mfd, pkg, PKG_MTREE, "+MTREE_DIRS");
 
 	for (i = 0; scripts[i] != NULL; i++) {
 		if (faccessat(mfd, scripts[i], F_OK, 0) == 0)

@@ -33,7 +33,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
-#include <stdlib.h>
 
 #include "pkg.h"
 #include "private/event.h"
@@ -205,6 +204,7 @@ manifest_schema_open(pkg_t type __unused)
 		"    origin,"
 		"    name,"
 		"    comment,"
+		"    version,"
 		"    desc,"
 		"    maintainer,"
 		"    arch,"
@@ -346,9 +346,7 @@ pkg_vset(struct pkg *pkg, va_list ap)
 				    ucl_object_fromstring_common(data, strlen(data), 0),
 				    pkg_keys[attr].name, strlen(pkg_keys[attr].name), false);
 
-			if (buf != NULL)
-				free(buf);
-
+			free(buf);
 			break;
 		case UCL_BOOLEAN:
 			ucl_object_replace_key(pkg->fields,
@@ -1608,15 +1606,6 @@ pkg_copy_tree(struct pkg *pkg, const char *src, const char *dest)
 	struct pkg_dir *dir = NULL;
 	char spath[MAXPATHLEN];
 	char dpath[MAXPATHLEN];
-	const char *prefix;
-	char *mtree;
-	const pkg_object *o;
-
-	o = pkg_config_get("DISABLE_MTREE");
-	if (o && !pkg_object_bool(o)) {
-		pkg_get(pkg, PKG_PREFIX, &prefix, PKG_MTREE, &mtree);
-		do_extract_mtree(mtree, prefix);
-	}
 
 	/* Execute pre-install scripts */
 	pkg_script_run(pkg, PKG_SCRIPT_PRE_INSTALL);

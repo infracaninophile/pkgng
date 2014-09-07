@@ -26,24 +26,16 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/param.h>
-#include <sys/queue.h>
-#include <sys/stat.h>
 #include <sys/mman.h>
 
 #define _WITH_GETLINE
 
 #include <archive.h>
-#include <archive.h>
 #include <err.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <fnmatch.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
-#include <sysexits.h>
 #include <utlist.h>
 
 #include <expat.h>
@@ -174,31 +166,22 @@ pkg_audit_free_entry(struct pkg_audit_entry *e)
 	if (!e->ref) {
 		LL_FOREACH_SAFE(e->packages, ppkg, ppkg_tmp) {
 			LL_FOREACH_SAFE(ppkg->versions, vers, vers_tmp) {
-				if (vers->v1.version) {
-					free(vers->v1.version);
-				}
-				if (vers->v2.version) {
-					free(vers->v2.version);
-				}
+				free(vers->v1.version);
+				free(vers->v2.version);
 				free(vers);
 			}
 
 			LL_FOREACH_SAFE(ppkg->names, pname, pname_tmp) {
-				if (pname->pkgname)
-					free(pname->pkgname);
+				free(pname->pkgname);
 				free(pname);
 			}
 		}
 		LL_FOREACH_SAFE(e->cve, cve, cve_tmp) {
-			if (cve->cvename)
-				free(cve->cvename);
+			free(cve->cvename);
 			free(cve);
 		}
-		if (e->url)
 			free(e->url);
-		if (e->desc)
 			free(e->desc);
-		if (e->id)
 			free(e->id);
 	}
 	free(e);

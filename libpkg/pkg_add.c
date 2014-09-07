@@ -29,14 +29,10 @@
 #include "pkg_config.h"
 #endif
 
-#include <sys/utsname.h>
-
 #include <archive.h>
 #include <archive_entry.h>
 #include <assert.h>
 #include <libgen.h>
-#include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
 #include <errno.h>
 
@@ -91,11 +87,12 @@ do_extract(struct archive *a, struct archive_entry *ae, const char *location,
 	srand(time(NULL));
 #endif
 
-	pkg_get(pkg, PKG_NAME, &name);
-	pkg_emit_progress_start(NULL);
-	/* show a progression on package with no files */
 	if (nfiles == 0)
-		pkg_emit_progress_tick(1,1);
+		return (EPKG_OK);
+
+	pkg_get(pkg, PKG_NAME, &name);
+	pkg_emit_extract_begin(pkg);
+	pkg_emit_progress_start(NULL);
 
 	do {
 		snprintf(pathname, sizeof(pathname), "%s/%s",
@@ -172,57 +169,10 @@ do_extract(struct archive *a, struct archive_entry *ae, const char *location,
 cleanup:
 
 	pkg_emit_progress_tick(nfiles, nfiles);
+	pkg_emit_extract_finished(pkg);
 
 	if (renamed && retcode == EPKG_FATAL)
 		unlink(rpath);
-
-	return (retcode);
-}
-
-int
-do_extract_mtree(char *mtree, const char *prefix)
-{
-	struct archive *a = NULL;
-	struct archive_entry *ae;
-	char path[MAXPATHLEN];
-	const char *fpath;
-	int retcode = EPKG_OK;
-	int ret;
-
-	if (mtree == NULL || *mtree == '\0')
-		return EPKG_OK;
-
-	a = archive_read_new();
-	archive_read_support_filter_none(a);
-	archive_read_support_format_mtree(a);
-
-	if (archive_read_open_memory(a, mtree, strlen(mtree)) != ARCHIVE_OK) {
-		pkg_emit_error("Fail to extract the mtree: %s",
-		    archive_error_string(a));
-		retcode = EPKG_FATAL;
-		goto cleanup;
-	}
-
-	while ((ret = archive_read_next_header(a, &ae)) != ARCHIVE_EOF) {
-		if (ret != ARCHIVE_OK) {
-			pkg_emit_error("Skipping unsupported mtree line: %s",
-			    archive_error_string(a));
-			continue;
-		}
-		fpath = archive_entry_pathname(ae);
-
-		if (*fpath != '/') {
-			snprintf(path, sizeof(path), "%s/%s", prefix, fpath);
-			archive_entry_set_pathname(ae, path);
-		}
-
-		/* Ignored failed extraction on purpose */
-		archive_read_extract(a, ae, EXTRACT_ARCHIVE_FLAGS);
-	}
-
-cleanup:
-	if (a != NULL)
-		archive_read_free(a);
 
 	return (retcode);
 }
@@ -235,7 +185,7 @@ pkg_add_check_pkg_archive(struct pkgdb *db, struct pkg *pkg,
 	const char	*arch;
 	const char	*origin;
 	const char	*name;
-	int	ret;
+	int	ret, retcode;
 	struct pkg_dep	*dep = NULL;
 	char	bd[MAXPATHLEN], *basedir;
 	char	dpath[MAXPATHLEN];
@@ -290,6 +240,9 @@ pkg_add_check_pkg_archive(struct pkgdb *db, struct pkg *pkg,
 		basedir = NULL;
 	}
 
+	retcode = EPKG_FATAL;
+	pkg_emit_add_deps_begin(pkg);
+
 	while (pkg_deps(pkg, &dep) == EPKG_OK) {
 		if (pkg_is_installed(db, pkg_dep_origin(dep)) == EPKG_OK)
 			continue;
@@ -306,22 +259,26 @@ pkg_add_check_pkg_archive(struct pkgdb *db, struct pkg *pkg,
 				ret = pkg_add(db, dpath, PKG_ADD_AUTOMATIC, keys, location);
 
 				if (ret != EPKG_OK)
-					return (EPKG_FATAL);
+					goto cleanup;
 			} else {
 				pkg_emit_error("Missing dependency matching "
 					"Origin: '%s' Version: '%s'",
 					pkg_dep_get(dep, PKG_DEP_ORIGIN),
 					pkg_dep_get(dep, PKG_DEP_VERSION));
 				if ((flags & PKG_ADD_FORCE_MISSING) == 0)
-					return (EPKG_FATAL);
+					goto cleanup;
 			}
 		} else {
 			pkg_emit_missing_dep(pkg, dep);
-			return (EPKG_FATAL);
+			goto cleanup;
 		}
 	}
 
-	return (EPKG_OK);
+	retcode = EPKG_OK;
+cleanup:
+	pkg_emit_add_deps_finished(pkg);
+
+	return (retcode);
 }
 
 static int
@@ -334,7 +291,7 @@ pkg_add_cleanup_old(struct pkg *old, struct pkg *new, int flags)
 
 	handle_rc = pkg_object_bool(pkg_config_get("HANDLE_RC_SCRIPTS"));
 	if (handle_rc)
-		pkg_start_stop_rc_scripts(old, PKG_RC_START);
+		pkg_start_stop_rc_scripts(old, PKG_RC_STOP);
 
 	/*
 	 * Execute pre deinstall scripts
@@ -380,10 +337,7 @@ pkg_add_common(struct pkgdb *db, const char *path, unsigned flags,
 	struct pkg	*pkg = NULL;
 	bool		 extract = true;
 	bool		 handle_rc = false;
-	bool		 disable_mtree;
 	bool		 automatic;
-	char		*mtree;
-	char		*prefix;
 	int		 retcode = EPKG_OK;
 	int		 ret;
 	int nfiles;
@@ -455,20 +409,6 @@ pkg_add_common(struct pkgdb *db, const char *path, unsigned flags,
 	if (retcode != EPKG_OK)
 		goto cleanup;
 
-	/* MTREE replicates much of the standard functionality
-	 * inplicit in the way pkg works.  It has to remain available
-	 * in the ports for compatibility with the old pkg_tools, but
-	 * ultimately, MTREE should be made redundant.  Use this for
-	 * experimantal purposes and to develop MTREE-free versions of
-	 * packages. */
-
-	disable_mtree = pkg_object_bool(pkg_config_get("DISABLE_MTREE"));
-	if (!disable_mtree) {
-		pkg_get(pkg, PKG_PREFIX, &prefix, PKG_MTREE, &mtree);
-		if ((retcode = do_extract_mtree(mtree, prefix)) != EPKG_OK)
-			goto cleanup_reg;
-	}
-
 	if (local != NULL) {
 		if (pkg_add_cleanup_old(local, remote, flags) != EPKG_OK) {
 			retcode = EPKG_FATAL;
@@ -494,13 +434,6 @@ pkg_add_common(struct pkgdb *db, const char *path, unsigned flags,
 		pkg_delete_files(pkg, 2);
 		pkg_delete_dirs(db, pkg);
 		goto cleanup_reg;
-	} else if (!extract) {
-		/*
-		 * Meta packages will have no non-meta files. Still display
-		 * 100% progress.
-		 */
-		pkg_emit_progress_start(NULL);
-		pkg_emit_progress_tick(1,1);
 	}
 
 	/*

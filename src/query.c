@@ -998,8 +998,7 @@ exec_query(int argc, char **argv)
 	}
 
 cleanup:
-	if (pkg != NULL)
-		pkg_free(pkg);
+	pkg_free(pkg);
 
 	pkgdb_release_lock(db, PKGDB_LOCK_READONLY);
 	pkgdb_close(db);

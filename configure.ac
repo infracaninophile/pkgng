@@ -219,10 +219,6 @@ AS_IF([test "x$with_ldns" = "xyes"], [
    ])
 ])
 
-AC_CHECK_HEADER([atf-c.h], [
-	 TESTS="\$(test_program)"
- ])
-
 AC_CHECK_HEADER([sys/capability.h], [
         AC_CHECK_LIB(c, cap_sandboxed, [
                 AC_DEFINE(HAVE_CAPSICUM, 1, [Define 1 if you have 'capsicum'.])
@@ -326,5 +322,7 @@ AC_CONFIG_COMMANDS([pkg_repos.h], [[
 	fi
 	rm $NMODULES
 ]], [REPOS=$REPOS])
+
+AC_CONFIG_COMMANDS([mkdir], [$MKDIR_P tests/frontend])
 
 AC_OUTPUT

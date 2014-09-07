@@ -115,16 +115,6 @@
 #define HASH_ADD_UCLT(head,type,add)                             \
 	HASH_ADD(hh, head, type, sizeof(uint16_t), add)
 
-#define HASH_FIND_YAMLT(head,type,out)                                   \
-	HASH_FIND(hh,head,type,sizeof(yaml_node_type_t),out)
-#define HASH_ADD_YAMLT(head,type,add)                                    \
-	HASH_ADD(hh,head,type,sizeof(yaml_node_type_t),add)
-
-#define HASH_FIND_YAMLEVT(head,type,out)                                   \
-	HASH_FIND(hh,head,type,sizeof(yaml_event_type_t),out)
-#define HASH_ADD_YAMLEVT(head,type,add)                                    \
-	HASH_ADD(hh,head,type,sizeof(yaml_event_type_t),add)
-
 extern int eventpipe;
 
 struct pkg_repo_it;
@@ -147,6 +137,9 @@ struct pkg {
 	struct pkg_provide	*provides;
 	unsigned			flags;
 	int		rootfd;
+	char		**dir_to_del;
+	size_t		dir_to_del_cap;
+	size_t		dir_to_del_len;
 	pkg_t		 type;
 	struct pkg_repo		*repo;
 	UT_hash_handle	 hh;
@@ -355,6 +348,52 @@ struct pkg_repo {
 	void *priv;
 };
 
+struct keyword {
+	/* 64 is more than enough for this */
+	char keyword[64];
+	struct action *actions;
+	UT_hash_handle hh;
+};
+
+struct plist {
+	char last_file[MAXPATHLEN];
+	const char *stage;
+	char prefix[MAXPATHLEN];
+	struct sbuf *pre_install_buf;
+	struct sbuf *post_install_buf;
+	struct sbuf *pre_deinstall_buf;
+	struct sbuf *post_deinstall_buf;
+	struct sbuf *pre_upgrade_buf;
+	struct sbuf *post_upgrade_buf;
+	struct pkg *pkg;
+	char *uname;
+	char *gname;
+	const char *slash;
+	char *pkgdep;
+	bool ignore_next;
+	int64_t flatsize;
+	struct hardlinks *hardlinks;
+	mode_t perm;
+	struct {
+		char *buf;
+		char **patterns;
+		size_t len;
+		size_t cap;
+	} post_patterns;
+	struct keyword *keywords;
+};
+
+struct file_attr {
+	char *owner;
+	char *group;
+	mode_t mode;
+};
+
+struct action {
+	int (*perform)(struct plist *, char *, struct file_attr *);
+	struct action *next;
+};
+
 /* sql helpers */
 
 typedef struct _sql_prstmt {
@@ -507,8 +546,6 @@ int pkgdb_is_dir_used(struct pkgdb *db, const char *dir, int64_t *res);
 int pkg_emit_manifest_sbuf(struct pkg*, struct sbuf *, short, char **);
 int pkg_emit_filelist(struct pkg *, FILE *);
 
-int do_extract_mtree(char *mtree, const char *prefix);
-
 int pkg_repo_binary_update(struct pkg_repo *repo, bool force);
 
 bool ucl_object_emit_sbuf(const ucl_object_t *obj, enum ucl_emitter emit_type,
@@ -538,5 +575,9 @@ int pkg_add_upgrade(struct pkgdb *db, const char *path, unsigned flags,
 void pkg_delete_dir(struct pkg *pkg, struct pkg_dir *dir);
 void pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force);
 int pkg_open_root_fd(struct pkg *pkg);
+void pkg_add_dir_to_del(struct pkg *pkg, const char *file, const char *dir);
+struct plist *plist_new(struct pkg *p);
+int plist_parse_line(struct pkg *pkg, struct plist *p, char *line);
+void plist_free(struct plist *);
 
 #endif

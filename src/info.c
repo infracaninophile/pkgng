@@ -120,7 +120,7 @@ exec_info(int argc, char **argv)
 		{ "origin",		no_argument,		NULL,	'o' },
 		{ "by-origin",		no_argument,		NULL,	'O' },
 		{ "prefix",		no_argument,		NULL,	'p' },
-		{ "guiet",		no_argument,		NULL,	'q' },
+		{ "quiet",		no_argument,		NULL,	'q' },
 		{ "required-by",	no_argument,		NULL,	'r' },
 		{ "raw",		no_argument,		NULL,	'R' },
 		{ "size",		no_argument,		NULL,	's' },
@@ -514,8 +514,7 @@ exec_info(int argc, char **argv)
 	} while (i < argc);
 
 cleanup:
-	if (pkg != NULL)
-		pkg_free(pkg);
+	pkg_free(pkg);
 
 	pkgdb_release_lock(db, PKGDB_LOCK_READONLY);
 	pkgdb_close(db);

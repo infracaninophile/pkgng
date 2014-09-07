@@ -417,8 +417,7 @@ cleanup:
 	close(mfd);
 	if (read_files)
 		close(ffd);
-	if (mdigest)
-		free(mdigest);
+	free(mdigest);
 
 	pkg_debug(1, "worker done");
 	exit(ret);
@@ -836,7 +835,7 @@ pkg_repo_sign(char *path, char **argv, int argc, struct sbuf **sig, struct sbuf 
 		else
 			sbuf_printf(cmd, " %s ", argv[i]);
 	}
-	sbuf_done(cmd);
+	sbuf_finish(cmd);
 
 	if ((fp = popen(sbuf_data(cmd), "r+")) == NULL) {
 		ret = EPKG_FATAL;
@@ -1094,8 +1093,7 @@ cleanup:
 	pkg_emit_progress_tick(files_to_pack, files_to_pack);
 	pkg_repo_meta_free(meta);
 
-	if (rsa)
-		rsa_free(rsa);
+	rsa_free(rsa);
 
 	return (ret);
 }

@@ -186,8 +186,7 @@ fix_deps(struct pkgdb *db, struct deps_head *dh, int nbpkgs, bool yes)
 	}
 
 cleanup:
-	if (pkgs != NULL)
-		free(pkgs);
+	free(pkgs);
 	if (jobs != NULL)
 		pkg_jobs_free(jobs);
 
@@ -451,9 +450,10 @@ exec_check(int argc, char **argv)
 					rc = EX_TEMPFAIL;
 				}
 			}
-			++processed;
 
-			if (verbose)
+			if (!verbose)
+				++processed;
+			else
 				printf(" done\n");
 		}
 		if (!verbose)

@@ -24,14 +24,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/param.h>
-#include <sys/mount.h>
-
-#include <assert.h>
-#include <errno.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
 #define _WITH_GETLINE
 #include <stdio.h>
 #include <ctype.h>
@@ -518,8 +510,7 @@ pkg_jobs_cudf_parse_output(struct pkg_jobs *j, FILE *f)
 		}
 	}
 
-	if (line != NULL)
-		free(line);
+	free(line);
 
 	return (EPKG_OK);
 }

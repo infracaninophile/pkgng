@@ -1,7 +1,7 @@
 /*-
  * Copyright (c) 2013 Baptiste Daroussin <bapt@FreeBSD.org>
  * All rights reserved.
- * 
+ *~
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -11,7 +11,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 
+ *~
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
@@ -24,76 +24,45 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <err.h>
-#include <inttypes.h>
-#include <stdio.h>
-#include <sysexits.h>
-
+#include <atf-c.h>
 #include <pkg.h>
+#include <private/pkg.h>
 
-#include "pkgcli.h"
+ATF_TC(pkg_add_dir_to_del);
 
-void
-usage_config(void)
+ATF_TC_HEAD(pkg_add_dir_to_del, tc)
 {
-	fprintf(stderr,
-            "Usage: pkg config <configname>\n\n");
-	//fprintf(stderr, "For more information see 'pkg help config'.\n");
+	atf_tc_set_md_var(tc, "descr",
+	    "pkg_add_dir_to_del()");
 }
 
-int
-exec_config(int argc, char **argv)
+ATF_TC_BODY(pkg_add_dir_to_del, tc)
 {
-	const pkg_object *conf, *o;
-	pkg_iter it = NULL;
-	const char *buf;
-	char *key;
-	int64_t integer;
-	int i;
-	bool b;
+	struct pkg *p = NULL;
 
-	if (argc != 2) {
-		usage_config();
-		return (EX_USAGE);
-	}
+	ATF_REQUIRE_EQ(EPKG_OK, pkg_new(&p, PKG_FILE));
+	pkg_set(p, PKG_PREFIX, "/usr/local");
 
-	key = argv[1];
-	for (i = 0; key[i] != '\0'; i++)
-		key[i] = toupper(key[i]);
+	ATF_REQUIRE(p->dir_to_del == NULL);
 
-	conf = pkg_config_get(key);
-	if (conf == NULL) {
-		warnx("No such configuration options: %s", key);
-		return (EX_SOFTWARE);
-	}
+	pkg_add_dir_to_del(p, "/usr/local/plop/bla", NULL);
 
-	switch (pkg_object_type(conf)) {
-	case PKG_STRING:
-		buf = pkg_object_string(conf);
-		printf("%s\n", buf == NULL ? "" : buf);
-		break;
-	case PKG_BOOL:
-		b = pkg_object_bool(conf);
-		printf("%s\n", b ? "yes" : "no");
-		break;
-	case PKG_INT:
-		integer = pkg_object_int(conf);
-		printf("%"PRId64"\n", integer);
-		break;
-	case PKG_OBJECT:
-		while ((o = pkg_object_iterate(conf, &it))) {
-			printf("%s: %s\n", pkg_object_key(o), pkg_object_string(o));
-		}
-		break;
-	case PKG_ARRAY:
-		while ((o = pkg_object_iterate(conf, &it))) {
-			printf("%s\n", pkg_object_string(o));
-		}
-		break;
-	default:
-		break;
-	}
+	ATF_REQUIRE_STREQ(p->dir_to_del[0], "/usr/local/plop/");
 
-	return (EX_OK);
+	pkg_add_dir_to_del(p, NULL, "/usr/local/plop");
+
+	ATF_REQUIRE(p->dir_to_del_len == 1);
+
+	pkg_add_dir_to_del(p, NULL, "/var/run/yeah");
+
+	ATF_REQUIRE_STREQ(p->dir_to_del[1], "/var/run/yeah/");
+
+	pkg_free(p);
+}
+
+ATF_TP_ADD_TCS(tp)
+{
+	ATF_TP_ADD_TC(tp, pkg_add_dir_to_del); 
+
+	return (atf_no_error());
 }

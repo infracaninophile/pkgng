@@ -41,7 +41,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <yaml.h>
 #include <ucl.h>
 #include <uthash.h>
 #include <utlist.h>
@@ -246,11 +245,12 @@ file_to_buffer(const char *path, char **buffer, off_t *sz)
 
 int
 format_exec_cmd(char **dest, const char *in, const char *prefix,
-    const char *plist_file, char *line)
+    const char *plist_file, char *line, int argc, char **argv)
 {
 	struct sbuf *buf = sbuf_new_auto();
 	char path[MAXPATHLEN];
 	char *cp;
+	size_t sz;
 
 	while (in[0] != '\0') {
 		if (in[0] != '%') {
@@ -323,7 +323,25 @@ format_exec_cmd(char **dest, const char *in, const char *prefix,
 			 * given (default exec) %@ does not
 			 * exists
 			 */
+		case '#':
+			sbuf_putc(buf, argc);
+			break;
 		default:
+			if ((sz = strspn(in, "0123456789")) > 0) {
+				int pos = strtol(in, NULL, 10);
+				if (pos > argc) {
+					pkg_emit_error("Requesting argument "
+					    "%%%d while only %d arguments are"
+					    " available", pos, argc);
+					sbuf_finish(buf);
+					sbuf_free(buf);
+
+					return (EPKG_FATAL);
+				}
+				sbuf_cat(buf, argv[pos -1]);
+				in += sz -1;
+				break;
+			}
 			sbuf_putc(buf, '%');
 			sbuf_putc(buf, in[0]);
 			break;
@@ -561,131 +579,6 @@ is_valid_abi(const char *arch, bool emit_error) {
 	}
 
 	return (true);
-}
-
-static ucl_object_t *yaml_mapping_to_object(ucl_object_t *obj, yaml_document_t *doc, yaml_node_t *node);
-
-static ucl_object_t *
-yaml_sequence_to_object(ucl_object_t *obj, yaml_document_t *doc, yaml_node_t *node)
-{
-	yaml_node_item_t *item;
-	yaml_node_t *val;
-	ucl_object_t *sub = NULL;
-
-	item = node->data.sequence.items.start;
-	while (item < node->data.sequence.items.top) {
-		val = yaml_document_get_node(doc, *item);
-		switch (val->type) {
-		case YAML_MAPPING_NODE:
-			sub = yaml_mapping_to_object(NULL, doc, val);
-			break;
-		case YAML_SEQUENCE_NODE:
-			sub = yaml_sequence_to_object(NULL, doc, val);
-			break;
-		case YAML_SCALAR_NODE:
-			sub = ucl_object_fromstring_common (val->data.scalar.value,
-			    val->data.scalar.length, UCL_STRING_TRIM|UCL_STRING_PARSE_BOOLEAN|UCL_STRING_PARSE_INT);
-			break;
-		case YAML_NO_NODE:
-			/* Should not happen */
-			break;
-		}
-		if (obj == NULL)
-			obj = ucl_object_typed_new(UCL_ARRAY);
-		ucl_array_append(obj, sub);
-		++item;
-	}
-
-	return (obj);
-}
-
-static ucl_object_t *
-yaml_mapping_to_object(ucl_object_t *obj, yaml_document_t *doc, yaml_node_t *node)
-{
-	yaml_node_pair_t *pair;
-	yaml_node_t *key, *val;
-
-	ucl_object_t *sub = NULL;
-
-	pair = node->data.mapping.pairs.start;
-	while (pair < node->data.mapping.pairs.top) {
-		key = yaml_document_get_node(doc, pair->key);
-		val = yaml_document_get_node(doc, pair->value);
-
-		switch (val->type) {
-		case YAML_MAPPING_NODE:
-			sub = yaml_mapping_to_object(NULL, doc, val);
-			break;
-		case YAML_SEQUENCE_NODE:
-			sub = yaml_sequence_to_object(NULL, doc, val);
-			break;
-		case YAML_SCALAR_NODE:
-			sub = ucl_object_fromstring_common (val->data.scalar.value,
-			    val->data.scalar.length,
-			    UCL_STRING_TRIM|UCL_STRING_PARSE_BOOLEAN|UCL_STRING_PARSE_INT);
-			break;
-		case YAML_NO_NODE:
-			/* Should not happen */
-			break;
-		}
-		if (sub != NULL) {
-			if (obj == NULL)
-				obj = ucl_object_typed_new(UCL_OBJECT);
-			ucl_object_insert_key(obj, sub, key->data.scalar.value, key->data.scalar.length, true);
-		}
-		++pair;
-	}
-
-	return (obj);
-}
-
-ucl_object_t *
-yaml_to_ucl(const char *file, const char *buffer, size_t len) {
-	yaml_parser_t parser;
-	yaml_document_t doc;
-	yaml_node_t *node;
-	ucl_object_t *obj = NULL;
-	FILE *fp = NULL;
-
-	memset(&parser, 0, sizeof(parser));
-
-	yaml_parser_initialize(&parser);
-
-	if (file != NULL) {
-		fp = fopen(file, "r");
-		if (fp == NULL) {
-			pkg_emit_errno("fopen", file);
-			return (NULL);
-		}
-		yaml_parser_set_input_file(&parser, fp);
-	} else {
-		yaml_parser_set_input_string(&parser, buffer, len);
-	}
-
-	yaml_parser_load(&parser, &doc);
-
-	node = yaml_document_get_root_node(&doc);
-	if (node != NULL) {
-		switch (node->type) {
-		case YAML_MAPPING_NODE:
-			obj = yaml_mapping_to_object(NULL, &doc, node);
-			break;
-		case YAML_SEQUENCE_NODE:
-			obj = yaml_sequence_to_object(NULL, &doc, node);
-			break;
-		case YAML_SCALAR_NODE:
-		case YAML_NO_NODE:
-			break;
-		}
-	}
-
-	yaml_document_delete(&doc);
-	yaml_parser_delete(&parser);
-
-	if (file != NULL)
-		fclose(fp);
-
-	return (obj);
 }
 
 void
@@ -994,3 +887,102 @@ pkg_symlink_cksumat(int fd, const char *path, const char *root, char *cksum)
 
 	return (pkg_symlink_cksum_readlink(linkbuf, linklen, root, cksum));
 }
+
+/* A bit like strsep(), except it accounts for "double" and 'single'
+   quotes.  Unlike strsep(), returns the next arg string, trimmed of
+   whitespace or enclosing quotes, and updates **args to point at the
+   character after that.  Sets *args to NULL when it has been
+   completely consumed.  Quoted strings run from the first encountered
+   quotemark to the next one of the same type or the terminating NULL.
+   Quoted strings can contain the /other/ type of quote mark, which
+   loses any special significance.  There isn't an escape
+   character. */
+
+enum parse_states {
+	START,
+	ORDINARY_TEXT,
+	OPEN_SINGLE_QUOTES,
+	IN_SINGLE_QUOTES,
+	OPEN_DOUBLE_QUOTES,
+	IN_DOUBLE_QUOTES,
+};
+
+char *
+pkg_utils_tokenize(char **args)
+{
+	char			*p, *p_start;
+	enum parse_states	 parse_state = START;
+
+	assert(*args != NULL);
+
+	for (p = p_start = *args; *p != '\0'; p++) {
+		switch (parse_state) {
+		case START:
+			if (!isspace(*p)) {
+				if (*p == '"')
+					parse_state = OPEN_DOUBLE_QUOTES;
+				else if (*p == '\'')
+					parse_state = OPEN_SINGLE_QUOTES;
+				else {
+					parse_state = ORDINARY_TEXT;
+					p_start = p;
+				}				
+			} else 
+				p_start = p;
+			break;
+		case ORDINARY_TEXT:
+			if (isspace(*p))
+				goto finish;
+			break;
+		case OPEN_SINGLE_QUOTES:
+			p_start = p;
+			if (*p == '\'')
+				goto finish;
+
+			parse_state = IN_SINGLE_QUOTES;
+			break;
+		case IN_SINGLE_QUOTES:
+			if (*p == '\'')
+				goto finish;
+			break;
+		case OPEN_DOUBLE_QUOTES:
+			p_start = p;
+			if (*p == '"')
+				goto finish;
+			parse_state = IN_DOUBLE_QUOTES;
+			break;
+		case IN_DOUBLE_QUOTES:
+			if (*p == '"')
+				goto finish;
+			break;
+		}
+	}
+
+finish:
+	if (*p == '\0')
+		*args = NULL;	/* All done */
+	else {
+		*p = '\0';
+		p++;
+		if (*p == '\0' || parse_state == START)
+			*args = NULL; /* whitespace or nothing left */
+		else
+			*args = p;
+	}
+	return (p_start);
+}
+
+int
+pkg_utils_count_spaces(const char *args)
+{
+	int		spaces;
+	const char	*p;
+
+	for (spaces = 0, p = args; *p != '\0'; p++) 
+		if (isspace(*p))
+			spaces++;
+
+	return (spaces);
+}
+
+

@@ -606,8 +606,7 @@ pkg_repo_archive_extract_archive(int fd, const char *file,
 		cbdata.need_sig = false;
 		if (pkg_emit_sandbox_get_string(pkg_repo_meta_extract_signature_pubkey,
 			&cbdata, (char **)&sig, &siglen) == EPKG_OK) {
-			if (sig)
-				free(sig);
+			free(sig);
 		}
 		else {
 			pkg_emit_error("Repo extraction failed");
@@ -648,6 +647,12 @@ pkg_repo_archive_extract_check_archive(int fd, const char *file,
 		return (EPKG_FATAL);
 
 	if (pkg_repo_signature_type(repo) == SIG_PUBKEY) {
+		if (pkg_repo_key(repo) == NULL) {
+			pkg_emit_error("No PUBKEY defined. Removing "
+			    "repository.");
+			rc = EPKG_FATAL;
+			goto cleanup;
+		}
 		if (sc == NULL) {
 			pkg_emit_error("No signature found in the repository.  "
 					"Can not validate against %s key.", pkg_repo_key(repo));

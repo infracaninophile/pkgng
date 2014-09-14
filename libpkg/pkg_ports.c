@@ -788,8 +788,8 @@ apply_keyword_file(ucl_object_t *obj, struct plist *p, char *line, struct file_a
 	const ucl_object_t *o;
 	char *cmd;
 	char **args = NULL;
-	char *buf, *tofree;
-	int spaces, argc = 0, i;
+	char *buf, *tofree = NULL;
+	int spaces, argc = 0;
 
 	if ((o = ucl_object_find_key(obj,  "arguments")) && ucl_object_toboolean(o)) {
 		spaces = pkg_utils_count_spaces(line);
@@ -848,8 +848,6 @@ apply_keyword_file(ucl_object_t *obj, struct plist *p, char *line, struct file_a
 	if ((o = ucl_object_find_key(obj,  "actions")))
 		parse_actions(o, p, line, attr, argc, args);
 
-	for (i = 0; i < argc; i++)
-		free(args[i]);
 	free(args);
 	free(tofree);
 
@@ -1047,7 +1045,7 @@ plist_parse_line(struct pkg *pkg, struct plist *plist, char *line)
 }
 
 struct plist *
-plist_new(struct pkg *pkg)
+plist_new(struct pkg *pkg, const char *stage)
 {
 	struct plist *p;
 	const char *prefix;
@@ -1060,6 +1058,7 @@ plist_new(struct pkg *pkg)
 	pkg_get(pkg, PKG_PREFIX, &prefix);
 	strlcpy(p->prefix, prefix, sizeof(p->prefix));
 	p->slash = p->prefix[strlen(p->prefix) - 1] == '/' ? "" : "/";
+	p->stage = stage;
 	p->uname = strdup("root");
 	p->gname = strdup("wheel");
 
@@ -1114,7 +1113,7 @@ ports_parse_plist(struct pkg *pkg, const char *plist, const char *stage)
 	assert(pkg != NULL);
 	assert(plist != NULL);
 
-	if ((pplist = plist_new(pkg)) == NULL)
+	if ((pplist = plist_new(pkg, stage)) == NULL)
 		return (EPKG_FATAL);
 
 	if ((plist_f = fopen(plist, "r")) == NULL) {
@@ -1150,4 +1149,45 @@ ports_parse_plist(struct pkg *pkg, const char *plist, const char *stage)
 	plist_free(pplist);
 
 	return (ret);
+}
+
+int
+pkg_add_port(struct pkgdb *db, struct pkg *pkg, const char *input_path,
+    const char *location, bool testing, bool old)
+{
+	int rc = EPKG_OK;
+
+	if (location != NULL)
+		pkg_addannotation(pkg, "relocated", location);
+
+	pkg_emit_install_begin(pkg);
+
+	if (!old)
+		rc = pkgdb_register_pkg(db, pkg, 0, 0);
+
+	if (rc != EPKG_OK)
+		goto cleanup;
+
+	if (!testing) {
+		/* Execute pre-install scripts */
+		pkg_script_run(pkg, PKG_SCRIPT_PRE_INSTALL);
+
+		if (input_path != NULL)
+			pkg_copy_tree(pkg, input_path, \
+			    location ? location : "/");
+
+		/* Execute post-install scripts */
+		pkg_script_run(pkg, PKG_SCRIPT_POST_INSTALL);
+	}
+
+	if (rc == EPKG_OK)
+		pkg_emit_install_finished(pkg);
+
+cleanup:
+	if (old)
+		return (pkg_register_old(pkg));
+
+	pkgdb_register_finale(db, rc);
+
+	return (rc);
 }

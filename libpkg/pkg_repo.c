@@ -58,9 +58,9 @@
 
 struct sig_cert {
 	char name[MAXPATHLEN];
-	unsigned char *sig;
+	char *sig;
 	int64_t siglen;
-	unsigned char *cert;
+	char *cert;
 	int64_t certlen;
 	bool cert_allocated;
 	UT_hash_handle hh;
@@ -538,7 +538,7 @@ pkg_repo_archive_extract_archive(int fd, const char *file,
 	struct sig_cert *sc = NULL, *s;
 	struct pkg_extract_cbdata cbdata;
 
-	unsigned char *sig = NULL;
+	char *sig = NULL;
 	int rc = EPKG_OK;
 	int64_t siglen = 0;
 

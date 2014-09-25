@@ -162,28 +162,44 @@ rmdir_p(struct pkgdb *db, struct pkg *pkg, char *dir, const char *prefix_r)
 	int64_t cnt;
 	char fullpath[MAXPATHLEN];
 
+	snprintf(fullpath, sizeof(fullpath), "/%s", dir);
+	if (pkgdb_is_dir_used(db, pkg, fullpath, &cnt) != EPKG_OK)
+		return;
+
+	pkg_debug(1, "Number of packages owning the directory '%s': %d",
+	    fullpath, cnt);
+	/*
+	 * At this moment the package we are removing have already been removed
+	 * from the local database so if anything else is owning the directory
+	 * that is another package meaning only remove the diretory is cnt == 0
+	 */
+	if (cnt > 0)
+		return;
+
+	if (strcmp(prefix_r, dir) == 0)
+		return;
+
+	pkg_debug(1, "removing directory %s", dir);
 	if (unlinkat(pkg->rootfd, dir, AT_REMOVEDIR) == -1 &&
 	    errno != ENOTEMPTY && errno != EBUSY) {
 		pkg_emit_errno("unlinkat", dir);
 	}
 
+	/* No recursivity for packages out of the prefix */
+	if (strncmp(prefix_r, dir, strlen(prefix_r)) != 0)
+		return;
+
+	/* remove the trailing '/' */
 	tmp = strrchr(dir, '/');
 	if (tmp == dir)
 		return;
 
 	tmp[0] = '\0';
 	tmp = strrchr(dir, '/');
+	if (tmp == NULL)
+		return;
+
 	tmp[1] = '\0';
-
-	snprintf(fullpath, sizeof(fullpath), "/%s", dir);
-	if (pkgdb_is_dir_used(db, dir, &cnt) != EPKG_OK)
-		return;
-
-	if (cnt > 1)
-		return;
-
-	if (strcmp(prefix_r, dir) == 0)
-		return;
 
 	rmdir_p(db, pkg, dir, prefix_r);
 }
@@ -224,7 +240,9 @@ pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force)
 	/* check sha256 */
 	if (!force && sum[0] != '\0') {
 		if (fstatat(pkg->rootfd, path, &st, AT_SYMLINK_NOFOLLOW) == -1) {
-			pkg_emit_error("cannot stat %s: %s", path, strerror(errno));
+			pkg_emit_error("cannot stat %s%s%s: %s", pkg->rootpath,
+			    pkg->rootpath[strlen(pkg->rootpath) - 1] == '/' ? "" : "/",
+			    path, strerror(errno));
 			return;
 		}
 		if (S_ISLNK(st.st_mode)) {
@@ -237,8 +255,10 @@ pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force)
 				return;
 		}
 		if (strcmp(sha256, sum)) {
-			pkg_emit_error("%s fails original SHA256 "
-				"checksum, not removing", path);
+			pkg_emit_error("%s%s%s fails original SHA256 "
+				"checksum, not removing", pkg->rootpath,
+				pkg->rootpath[strlen(pkg->rootpath) - 1] == '/' ? "" : "/",
+				path);
 			return;
 		}
 	}

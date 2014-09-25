@@ -1602,7 +1602,8 @@ typedef int(*pkg_event_cb)(void *, struct pkg_event *);
 void pkg_event_register(pkg_event_cb cb, void *data);
 
 bool pkg_compiled_for_same_os_major(void);
-int pkg_init(const char *, const char *, pkg_init_flags);
+int pkg_ini(const char *, const char *, pkg_init_flags);
+int pkg_init(const char *, const char *);
 int pkg_initialized(void);
 void pkg_shutdown(void);
 
@@ -1611,6 +1612,7 @@ int pkg_recompute(struct pkgdb *, struct pkg *);
 int pkgdb_reanalyse_shlibs(struct pkgdb *, struct pkg *);
 
 int pkg_get_myarch(char *pkgarch, size_t sz);
+int pkg_get_myarch_legacy(char *pkgarch, size_t sz);
 
 void pkgdb_cmd(int argc, char **argv);
 int pkg_old_load_from_path(struct pkg *pkg, const char *path);

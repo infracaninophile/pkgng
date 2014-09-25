@@ -71,7 +71,7 @@ struct config_entry {
 	const char *desc;
 };
 
-static char myabi[BUFSIZ];
+static char myabi[BUFSIZ], myabi_legacy[BUFSIZ];
 static struct pkg_repo *repos = NULL;
 ucl_object_t *config = NULL;
 
@@ -141,6 +141,12 @@ static struct config_entry c[] = {
 		"ABI",
 		myabi,
 		"Override the automatically detected ABI",
+	},
+	{
+		PKG_STRING,
+		"ALTABI",
+		myabi_legacy,
+		"Override the automatically detected old-form ABI",
 	},
 	{
 		PKG_BOOL,
@@ -424,7 +430,7 @@ add_repo(const ucl_object_t *obj, struct pkg_repo *r, const char *rname, pkg_ini
 	const char *signature_type = NULL, *fingerprints = NULL;
 	const char *key;
 	const char *type = NULL;
-	int use_ipvx;
+	int use_ipvx = 0;
 
 	pkg_debug(1, "PkgConfig: parsing repository object %s", rname);
 
@@ -598,11 +604,15 @@ load_repo_file(const char *repofile, pkg_init_flags flags)
 	struct ucl_parser *p;
 	ucl_object_t *obj = NULL;
 	const char *myarch = NULL;
+	const char *myarch_legacy = NULL;
 
 	p = ucl_parser_new(0);
 
 	myarch = pkg_object_string(pkg_config_get("ABI"));
 	ucl_parser_register_variable (p, "ABI", myarch);
+
+	myarch_legacy = pkg_object_string(pkg_config_get("ALTABI"));
+	ucl_parser_register_variable (p, "ALTABI", myarch_legacy);
 
 	pkg_debug(1, "PKgConfig: loading %s", repofile);
 	if (!ucl_parser_add_file(p, repofile)) {
@@ -687,7 +697,13 @@ pkg_compiled_for_same_os_major(void)
 
 
 int
-pkg_init(const char *path, const char *reposdir, pkg_init_flags flags)
+pkg_init(const char *path, const char *reposdir)
+{
+	return (pkg_ini(path, reposdir, 0));
+}
+
+int
+pkg_ini(const char *path, const char *reposdir, pkg_init_flags flags)
 {
 	struct ucl_parser *p = NULL;
 	size_t i;
@@ -706,6 +722,7 @@ pkg_init(const char *path, const char *reposdir, pkg_init_flags flags)
 	o = NULL;
 
 	pkg_get_myarch(myabi, BUFSIZ);
+	pkg_get_myarch_legacy(myabi_legacy, BUFSIZ);
 	if (parsed != false) {
 		pkg_emit_error("pkg_init() must only be called once");
 		return (EPKG_FATAL);
@@ -1028,9 +1045,11 @@ pkg_repo_overwrite(struct pkg_repo *r, const char *name, const char *url,
 {
 
 	free(r->name);
-	free(r->url);
 	r->name = strdup(name);
-	r->url = strdup(url);
+	if (url != NULL) {
+		free(r->url);
+		r->url = strdup(url);
+	}
 	r->ops = pkg_repo_find_type(type);
 	HASH_DEL(repos, r);
 	HASH_ADD_KEYPTR(hh, repos, r->name, strlen(r->name), r);

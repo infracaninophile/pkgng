@@ -60,7 +60,7 @@ exec_which(int argc, char **argv)
 	char		*p, *path, *match;
 	int		 ret = EPKG_OK, retcode = EX_SOFTWARE;
 	int		 ch;
-	int		 res, pathlen;
+	int		 res, pathlen = 0;
 	bool		 orig = false;
 	bool		 glob = false;
 	bool		 search = false;
@@ -73,6 +73,8 @@ exec_which(int argc, char **argv)
 		{ "quiet",		no_argument,	NULL,	'q' },
 		{ NULL,			0,		NULL,	0   },
 	};
+
+	path = NULL;
 
 	while ((ch = getopt_long(argc, argv, "+gopq", longopts, NULL)) != -1) {
 		switch (ch) {

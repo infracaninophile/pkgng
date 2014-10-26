@@ -46,9 +46,8 @@ pkg_delete(struct pkg *pkg, struct pkgdb *db, unsigned flags)
 {
 	int		 ret;
 	bool		 handle_rc = false;
-	int64_t		id;
 	const unsigned load_flags = PKG_LOAD_RDEPS|PKG_LOAD_FILES|PKG_LOAD_DIRS|
-					PKG_LOAD_SCRIPTS|PKG_LOAD_MTREE|PKG_LOAD_ANNOTATIONS;
+					PKG_LOAD_SCRIPTS|PKG_LOAD_ANNOTATIONS;
 
 	assert(pkg != NULL);
 	assert(db != NULL);
@@ -102,9 +101,7 @@ pkg_delete(struct pkg *pkg, struct pkgdb *db, unsigned flags)
 	if ((flags & PKG_DELETE_UPGRADE) == 0)
 		pkg_emit_deinstall_finished(pkg);
 
-	pkg_get(pkg, PKG_ROWID, &id);
-
-	return (pkgdb_unregister_pkg(db, id));
+	return (pkgdb_unregister_pkg(db, pkg->id));
 }
 
 void
@@ -208,11 +205,9 @@ static void
 pkg_effective_rmdir(struct pkgdb *db, struct pkg *pkg)
 {
 	char prefix_r[MAXPATHLEN];
-	const char *prefix;
 	size_t i;
 
-	pkg_get(pkg, PKG_PREFIX, &prefix);
-	snprintf(prefix_r, sizeof(prefix_r), "%s/", prefix + 1);
+	snprintf(prefix_r, sizeof(prefix_r), "%s/", pkg->prefix + 1);
 	for (i = 0; i < pkg->dir_to_del_len; i++)
 		rmdir_p(db, pkg, pkg->dir_to_del[i], prefix_r);
 }
@@ -220,7 +215,6 @@ pkg_effective_rmdir(struct pkgdb *db, struct pkg *pkg)
 void
 pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force)
 {
-	const char *sum = pkg_file_cksum(file);
 	const char *path;
 	const char *prefix_rel;
 	struct stat st;
@@ -229,16 +223,16 @@ pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force)
 
 	pkg_open_root_fd(pkg);
 
-	path = pkg_file_path(file);
+	path = file->path;
 	path++;
 
-	pkg_get(pkg, PKG_PREFIX, &prefix_rel);
+	prefix_rel = pkg->prefix;
 	prefix_rel++;
 	len = strlen(prefix_rel);
 
 	/* Regular files and links */
 	/* check sha256 */
-	if (!force && sum[0] != '\0') {
+	if (!force && file->sum[0] != '\0') {
 		if (fstatat(pkg->rootfd, path, &st, AT_SYMLINK_NOFOLLOW) == -1) {
 			pkg_emit_error("cannot stat %s%s%s: %s", pkg->rootpath,
 			    pkg->rootpath[strlen(pkg->rootpath) - 1] == '/' ? "" : "/",
@@ -254,7 +248,7 @@ pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force)
 			if (sha256_fileat(pkg->rootfd, path, sha256) != EPKG_OK)
 				return;
 		}
-		if (strcmp(sha256, sum)) {
+		if (strcmp(sha256, file->sum)) {
 			pkg_emit_error("%s%s%s fails original SHA256 "
 				"checksum, not removing", pkg->rootpath,
 				pkg->rootpath[strlen(pkg->rootpath) - 1] == '/' ? "" : "/",
@@ -295,9 +289,6 @@ pkg_delete_files(struct pkg *pkg, unsigned force)
 
 	while (pkg_files(pkg, &file) == EPKG_OK) {
 		pkg_emit_progress_tick(cur_file++, nfiles);
-
-		if (file->keep == 1)
-			continue;
 		pkg_delete_file(pkg, file, force);
 	}
 
@@ -316,11 +307,11 @@ pkg_delete_dir(struct pkg *pkg, struct pkg_dir *dir)
 
 	pkg_open_root_fd(pkg);
 
-	path = pkg_dir_path(dir);
+	path = dir->path;
 	/* remove the first / */
 	path++;
 
-	pkg_get(pkg, PKG_PREFIX, &prefix_rel);
+	prefix_rel = pkg->prefix;
 	prefix_rel++;
 	len = strlen(prefix_rel);
 
@@ -341,12 +332,8 @@ pkg_delete_dirs(__unused struct pkgdb *db, struct pkg *pkg)
 {
 	struct pkg_dir		*dir = NULL;
 
-	while (pkg_dirs(pkg, &dir) == EPKG_OK) {
-		if (dir->keep == 1)
-			continue;
-
+	while (pkg_dirs(pkg, &dir) == EPKG_OK)
 		pkg_delete_dir(pkg, dir);
-	}
 
 	pkg_effective_rmdir(db, pkg);
 

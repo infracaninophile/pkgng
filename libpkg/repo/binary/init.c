@@ -301,7 +301,6 @@ pkg_repo_binary_open(struct pkg_repo *repo, unsigned mode)
 	int64_t res;
 	struct pkg_repo_it *it;
 	struct pkg *pkg = NULL;
-	const char *digest;
 
 	sqlite3_initialize();
 	dbdir = pkg_object_string(pkg_config_get("PKG_DBDIR"));
@@ -383,8 +382,7 @@ pkg_repo_binary_open(struct pkg_repo *repo, unsigned mode)
 		return (EPKG_OK);
 	}
 	it->ops->free(it);
-	pkg_get(pkg, PKG_DIGEST, &digest);
-	if (digest == NULL || !pkg_checksum_is_valid(digest, strlen(digest))) {
+	if (pkg->digest == NULL || !pkg_checksum_is_valid(pkg->digest, strlen(pkg->digest))) {
 		pkg_emit_notice("Repository %s has incompatible checksum format, need to "
 			"re-create database", repo->name);
 		pkg_free(pkg);
@@ -432,8 +430,8 @@ pkg_repo_binary_create(struct pkg_repo *repo)
 	if (retcode == EPKG_OK) {
 		sqlite3_stmt *stmt;
 		const char sql[] = ""
-						"INSERT OR REPLACE INTO repodata (key, value) "
-						"VALUES (\"packagesite\", ?1);";
+			"INSERT OR REPLACE INTO repodata (key, value) "
+			"VALUES (\"packagesite\", ?1);";
 
 		/* register the packagesite */
 		if (sql_exec(sqlite, "CREATE TABLE IF NOT EXISTS repodata ("

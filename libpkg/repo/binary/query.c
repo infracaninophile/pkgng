@@ -109,7 +109,7 @@ pkg_repo_binary_query(struct pkg_repo *repo, const char *pattern, match_t match)
 	const char	*comp = NULL;
 	int		 ret;
 	char		 basesql[BUFSIZ] = ""
-		"SELECT id, origin, name, name || '~' || origin as uniqueid, version, comment, "
+		"SELECT id, origin, name, name as uniqueid, version, comment, "
 		"prefix, desc, arch, maintainer, www, "
 		"licenselogic, flatsize, pkgsize, "
 		"cksum, manifestdigest, path AS repopath, '%s' AS dbname "
@@ -153,7 +153,7 @@ pkg_repo_binary_shlib_provide(struct pkg_repo *repo, const char *require)
 	int		 ret;
 	const char	 basesql[] = ""
 			"SELECT p.id, p.origin, p.name, p.version, p.comment, "
-			"p.name || '~' || p.origin as uniqueid, "
+			"p.name as uniqueid, "
 			"p.prefix, p.desc, p.arch, p.maintainer, p.www, "
 			"p.licenselogic, p.flatsize, p.pkgsize, "
 			"p.cksum, p.manifestdigest, p.path AS repopath, '%s' AS dbname "
@@ -191,7 +191,7 @@ pkg_repo_binary_shlib_require(struct pkg_repo *repo, const char *provide)
 	int		 ret;
 	const char	 basesql[] = ""
 			"SELECT p.id, p.origin, p.name, p.version, p.comment, "
-			"p.name || '~' || p.origin as uniqueid, "
+			"p.name as uniqueid, "
 			"p.prefix, p.desc, p.arch, p.maintainer, p.www, "
 			"p.licenselogic, p.flatsize, p.pkgsize, "
 			"p.cksum, p.manifestdigest, p.path AS repopath, '%s' AS dbname "
@@ -365,7 +365,8 @@ pkg_repo_binary_ensure_loaded(struct pkg_repo *repo,
 	struct pkg *cached = NULL;
 	char path[MAXPATHLEN];
 
-	if (flags & (PKG_LOAD_FILES|PKG_LOAD_DIRS)) {
+	if ((flags & (PKG_LOAD_FILES|PKG_LOAD_DIRS)) != 0 &&
+			(pkg->flags & (PKG_LOAD_FILES|PKG_LOAD_DIRS)) == 0) {
 		/*
 		 * Try to get that information from fetched package in cache
 		 */
@@ -376,6 +377,8 @@ pkg_repo_binary_ensure_loaded(struct pkg_repo *repo,
 			return (EPKG_FATAL);
 
 		/* Now move required elements to the provided package */
+		pkg_list_free(pkg, PKG_FILES);
+		pkg_list_free(pkg, PKG_DIRS);
 		pkg->files = cached->files;
 		pkg->dirs = cached->dirs;
 		cached->files = NULL;

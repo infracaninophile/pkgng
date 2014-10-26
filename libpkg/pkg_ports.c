@@ -50,15 +50,13 @@ static ucl_object_t *keyword_schema = NULL;
 static int setprefix(struct plist *, char *, struct file_attr *);
 static int dir(struct plist *, char *, struct file_attr *);
 static int dirrm(struct plist *, char *, struct file_attr *);
-static int dirrmtry(struct plist *, char *, struct file_attr *);
-static int dirrm(struct plist *, char *, struct file_attr *);
-static int dirrmtry(struct plist *, char *, struct file_attr *);
 static int file(struct plist *, char *, struct file_attr *);
 static int setmod(struct plist *, char *, struct file_attr *);
 static int setowner(struct plist *, char *, struct file_attr *);
 static int setgroup(struct plist *, char *, struct file_attr *);
 static int ignore_next(struct plist *, char *, struct file_attr *);
 static int comment_key(struct plist *, char *, struct file_attr *);
+static int config(struct plist *, char *, struct file_attr *);
 /* compat with old packages */
 static int name_key(struct plist *, char *, struct file_attr *);
 static int pkgdep(struct plist *, char *, struct file_attr *);
@@ -70,7 +68,7 @@ static struct action_cmd {
 } list_actions[] = {
 	{ "setprefix", setprefix, 9},
 	{ "dirrm", dirrm, 5 },
-	{ "dirrmtry", dirrmtry, 7 },
+	{ "dirrmtry", dirrm, 7 },
 	{ "dir", dir, 3 },
 	{ "file", file, 4 },
 	{ "setmode", setmod, 6 },
@@ -78,6 +76,7 @@ static struct action_cmd {
 	{ "setgroup", setgroup, 8 },
 	{ "comment", comment_key, 7 },
 	{ "ignore_next", ignore_next, 11 },
+	{ "config", config, 6 },
 	/* compat with old packages */
 	{ "name", name_key, 4 },
 	{ "pkgdep", pkgdep, 6 },
@@ -177,19 +176,15 @@ sbuf_append(struct sbuf *buf, __unused const char *comment, const char *str, ...
 static int
 setprefix(struct plist *p, char *line, struct file_attr *a)
 {
-	char *pkgprefix;
-
 	/* if no arguments then set default prefix */
 	if (line[0] == '\0') {
-		pkg_get(p->pkg, PKG_PREFIX, &pkgprefix);
-		strlcpy(p->prefix, pkgprefix, sizeof(p->prefix));
+		strlcpy(p->prefix, p->pkg->prefix, sizeof(p->prefix));
 	}
 	else
 		strlcpy(p->prefix, line, sizeof(p->prefix));
 
-	pkg_get(p->pkg, PKG_PREFIX, &pkgprefix);
-	if (pkgprefix == NULL || *pkgprefix == '\0')
-		pkg_set(p->pkg, PKG_PREFIX, line);
+	if (p->pkg->prefix == NULL)
+		p->pkg->prefix = strdup(line);
 
 	p->slash = p->prefix[strlen(p->prefix) -1] == '/' ? "" : "/";
 
@@ -205,18 +200,17 @@ setprefix(struct plist *p, char *line, struct file_attr *a)
 static int
 name_key(struct plist *p, char *line, struct file_attr *a)
 {
-	char *name;
 	char *tmp;
 
-	pkg_get(p->pkg, PKG_NAME, &name);
-	if (name != NULL && *name != '\0') {
+	if (p->pkg->name != NULL) {
 		free(a);
 		return (EPKG_OK);
 	}
 	tmp = strrchr(line, '-');
 	tmp[0] = '\0';
 	tmp++;
-	pkg_set(p->pkg, PKG_NAME, line, PKG_VERSION, tmp);
+	p->pkg->name = strdup(line);
+	p->pkg->version = strdup(tmp);
 
 	free(a);
 	return (EPKG_OK);
@@ -234,7 +228,7 @@ pkgdep(struct plist *p, char *line, struct file_attr *a)
 }
 
 static int
-meta_dir(struct plist *p, char *line, struct file_attr *a, bool try)
+dir(struct plist *p, char *line, struct file_attr *a)
 {
 	size_t len;
 	char path[MAXPATHLEN];
@@ -277,42 +271,40 @@ meta_dir(struct plist *p, char *line, struct file_attr *a, bool try)
 			    a->owner ? a->owner : p->uname,
 			    a->group ? a->group : p->gname,
 			    a->mode ? a->mode : p->perm,
-			    try, true);
+			    true, true);
 		else
 			ret = pkg_adddir_attr(p->pkg, path, p->uname, p->gname,
-			    p->perm, try, true);
+			    p->perm, true, true);
 	}
 
 	free_file_attr(a);
 	return (ret);
 }
 
-static int
-dir(struct plist *p, char *line, struct file_attr *a)
+static void
+warn_deprecated_dir(void)
 {
-	return (meta_dir(p, line, a, true));
+	static bool warned_deprecated_dir = false;
+
+	if (warned_deprecated_dir)
+		return;
+	warned_deprecated_dir = true;
+
+	if (pkg_object_bool(pkg_config_get("DEVELOPER_MODE")))
+		pkg_emit_error("Warning: @dirrm[try] is deprecated, please"
+		    " use @dir");
 }
 
 static int
 dirrm(struct plist *p, char *line, struct file_attr *a)
 {
-	if (pkg_object_bool(pkg_config_get("DEVELOPER_MODE")))
-		pkg_emit_error("Warning: @dirrm is deprecated please use @dir");
 
-	return (meta_dir(p, line, a, false));
+	warn_deprecated_dir();
+	return (dir(p, line, a));
 }
 
 static int
-dirrmtry(struct plist *p, char *line, struct file_attr *a)
-{
-	if (pkg_object_bool(pkg_config_get("DEVELOPER_MODE")))
-		pkg_emit_error("Warning: @dirrmtry is deprecated please use @dir");
-
-	return (meta_dir(p, line, a, true));
-}
-
-static int
-file(struct plist *p, char *line, struct file_attr *a)
+meta_file(struct plist *p, char *line, struct file_attr *a, bool is_config)
 {
 	size_t len;
 	char path[MAXPATHLEN];
@@ -377,6 +369,18 @@ file(struct plist *p, char *line, struct file_attr *a)
 			else
 				sha256_file(testpath, sha256);
 			buf = sha256;
+			if (is_config) {
+				size_t sz;
+				char *content;
+				file_to_buffer(testpath, &content, &sz);
+				pkg_addconfig_file(p->pkg, path, content);
+				free(content);
+			}
+		} else {
+			if (is_config) {
+				pkg_emit_error("Plist error, @config %s: not a regular file", line);
+				return (EPKG_FATAL);
+			}
 		}
 		if (S_ISDIR(st.st_mode) &&
 		    !pkg_object_bool(pkg_config_get("PLIST_ACCEPT_DIRECTORIES"))) {
@@ -409,6 +413,18 @@ file(struct plist *p, char *line, struct file_attr *a)
 	free_file_attr(a);
 
 	return (ret);
+}
+
+static int
+config(struct plist *p, char *line, struct file_attr *a)
+{
+	return (meta_file(p, line, a, true));
+}
+
+static int
+file(struct plist *p, char *line, struct file_attr *a)
+{
+	return (meta_file(p, line, a, false));
 }
 
 static int
@@ -478,7 +494,8 @@ comment_key(struct plist *p, char *line, struct file_attr *a)
 		p->pkgdep = NULL;
 	} else if (strncmp(line, "ORIGIN:", 7) == 0) {
 		line += 7;
-		pkg_set(p->pkg, PKG_ORIGIN, line);
+		free(p->pkg->origin);
+		p->pkg->origin = strdup(line);
 	} else if (strncmp(line, "OPTIONS:", 8) == 0) {
 		line += 8;
 		/* OPTIONS:+OPTION -OPTION */
@@ -549,8 +566,17 @@ should_be_post(char *cmd, struct plist *p)
 	return (false);
 }
 
+typedef enum {
+	EXEC = 0,
+	UNEXEC,
+	PREEXEC,
+	POSTEXEC,
+	PREUNEXEC,
+	POSTUNEXEC
+} exec_t;
+
 static int
-meta_exec(struct plist *p, char *line, struct file_attr *a, bool unexec)
+meta_exec(struct plist *p, char *line, struct file_attr *a, exec_t type)
 {
 	char *cmd, *buf, *tmp;
 	char comment[2];
@@ -563,7 +589,20 @@ meta_exec(struct plist *p, char *line, struct file_attr *a, bool unexec)
 	if (ret != EPKG_OK)
 		return (EPKG_OK);
 
-	if (unexec) {
+	switch (type) {
+	case PREEXEC:
+		sbuf_printf(p->pre_install_buf, "%s\n", cmd);
+		break;
+	case POSTEXEC:
+		sbuf_printf(p->post_install_buf, "%s\n", cmd);
+		break;
+	case PREUNEXEC:
+		sbuf_printf(p->pre_deinstall_buf, "%s\n", cmd);
+		break;
+	case POSTUNEXEC:
+		sbuf_printf(p->post_deinstall_buf, "%s\n", cmd);
+		break;
+	case UNEXEC:
 		comment[0] = '\0';
 		/* workaround to detect the @dirrmtry */
 		if (STARTS_WITH(cmd, "rmdir ") || STARTS_WITH(cmd, "/bin/rmdir ")) {
@@ -617,7 +656,7 @@ meta_exec(struct plist *p, char *line, struct file_attr *a, bool unexec)
 					buf+=pmatch[1].rm_eo;
 					if (!strcmp(path, "/dev/null"))
 						continue;
-					dirrmtry(p, path, a);
+					dir(p, path, a);
 					a = NULL;
 				}
 			} else {
@@ -629,16 +668,19 @@ meta_exec(struct plist *p, char *line, struct file_attr *a, bool unexec)
 					buf+=pmatch[1].rm_eo;
 					if (!strcmp(path, "/dev/null"))
 						continue;
-					dirrmtry(p, path, a);
+					dir(p, path, a);
 					a = NULL;
 				}
 			}
 			regfree(&preg);
 
 		}
-	} else {
+		break;
+	case EXEC:
 		exec_append(p->post_install_buf, "%s\n", cmd);
+		break;
 	}
+
 	free_file_attr(a);
 	free(cmd);
 
@@ -646,15 +688,39 @@ meta_exec(struct plist *p, char *line, struct file_attr *a, bool unexec)
 }
 
 static int
+preunexec(struct plist *p, char *line, struct file_attr *a)
+{
+	return (meta_exec(p, line, a, PREUNEXEC));
+}
+
+static int
+postunexec(struct plist *p, char *line, struct file_attr *a)
+{
+	return (meta_exec(p, line, a, POSTUNEXEC));
+}
+
+static int
+preexec(struct plist *p, char *line, struct file_attr *a)
+{
+	return (meta_exec(p, line, a, PREEXEC));
+}
+
+static int
+postexec(struct plist *p, char *line, struct file_attr *a)
+{
+	return (meta_exec(p, line, a, POSTEXEC));
+}
+
+static int
 exec(struct plist *p, char *line, struct file_attr *a)
 {
-	return (meta_exec(p, line, a, false));
+	return (meta_exec(p, line, a, EXEC));
 }
 
 static int
 unexec(struct plist *p, char *line, struct file_attr *a)
 {
-	return (meta_exec(p, line, a, true));
+	return (meta_exec(p, line, a, UNEXEC));
 }
 
 static struct keyact {
@@ -664,14 +730,19 @@ static struct keyact {
 	{ "cwd", setprefix },
 	{ "ignore", ignore_next },
 	{ "comment", comment_key },
+	{ "config", config },
 	{ "dir", dir },
 	{ "dirrm", dirrm },
-	{ "dirrmtry", dirrmtry },
+	{ "dirrmtry", dirrm },
 	{ "mode", setmod },
 	{ "owner", setowner },
 	{ "group", setgroup },
 	{ "exec", exec },
 	{ "unexec", unexec },
+	{ "preexec", preexec },
+	{ "postexec", postexec },
+	{ "preunexec", preunexec },
+	{ "postunexec", postunexec },
 	/* old pkg compat */
 	{ "name", name_key },
 	{ "pkgdep", pkgdep },
@@ -1048,15 +1119,14 @@ struct plist *
 plist_new(struct pkg *pkg, const char *stage)
 {
 	struct plist *p;
-	const char *prefix;
 
 	p = calloc(1, sizeof(struct plist));
 	if (p == NULL)
 		return (NULL);
 
 	p->pkg = pkg;
-	pkg_get(pkg, PKG_PREFIX, &prefix);
-	strlcpy(p->prefix, prefix, sizeof(p->prefix));
+	if (pkg->prefix != NULL)
+		strlcpy(p->prefix, pkg->prefix, sizeof(p->prefix));
 	p->slash = p->prefix[strlen(p->prefix) - 1] == '/' ? "" : "/";
 	p->stage = stage;
 	p->uname = strdup("root");
@@ -1104,7 +1174,7 @@ int
 ports_parse_plist(struct pkg *pkg, const char *plist, const char *stage)
 {
 	char *line = NULL;
-	int ret = EPKG_OK;
+	int ret, rc = EPKG_OK;
 	struct plist *pplist;
 	FILE *plist_f;
 	size_t linecap = 0;
@@ -1125,11 +1195,13 @@ ports_parse_plist(struct pkg *pkg, const char *plist, const char *stage)
 		if (line[linelen - 1] == '\n')
 			line[linelen - 1] = '\0';
 		ret = plist_parse_line(pkg, pplist, line);
+		if (rc == EPKG_OK)
+			rc = ret;
 	}
 
 	free(line);
 
-	pkg_set(pkg, PKG_FLATSIZE, pplist->flatsize);
+	pkg->flatsize = pplist->flatsize;
 
 	flush_script_buffer(pplist->pre_install_buf, pkg,
 	    PKG_SCRIPT_PRE_INSTALL);
@@ -1148,7 +1220,7 @@ ports_parse_plist(struct pkg *pkg, const char *plist, const char *stage)
 
 	plist_free(pplist);
 
-	return (ret);
+	return (rc);
 }
 
 int
@@ -1158,7 +1230,7 @@ pkg_add_port(struct pkgdb *db, struct pkg *pkg, const char *input_path,
 	int rc = EPKG_OK;
 
 	if (location != NULL)
-		pkg_addannotation(pkg, "relocated", location);
+		pkg_kv_add(&pkg->annotations, "relocated", location, "annotation");
 
 	pkg_emit_install_begin(pkg);
 

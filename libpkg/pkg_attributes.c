@@ -97,7 +97,6 @@ pkg_file_new(struct pkg_file **file)
 		return (EPKG_FATAL);
 
 	(*file)->perm = 0;
-	(*file)->keep = 0;
 
 	return (EPKG_OK);
 }
@@ -106,46 +105,6 @@ void
 pkg_file_free(struct pkg_file *file)
 {
 	free(file);
-}
-
-const char *
-pkg_file_get(struct pkg_file const * const f, const pkg_file_attr attr)
-{
-	assert(f != NULL);
-
-	switch (attr) {
-	case PKG_FILE_PATH:
-		return (f->path);
-		break;
-	case PKG_FILE_SUM:
-		return (f->sum);
-		break;
-	case PKG_FILE_UNAME:
-		return (f->uname);
-		break;
-	case PKG_FILE_GNAME:
-		return (f->gname);
-		break;
-	default:
-		return (NULL);
-		break;
-	}
-}
-
-mode_t
-pkg_file_mode(struct pkg_file const * const f)
-{
-	assert(f != NULL);
-
-	return (f->perm);
-}
-
-bool
-pkg_file_keep(struct pkg_file const * const f)
-{
-	assert(f != NULL);
-
-	return (f->keep);
 }
 
 /*
@@ -159,8 +118,6 @@ pkg_dir_new(struct pkg_dir **d)
 		return (EPKG_FATAL);
 
 	(*d)->perm = 0;
-	(*d)->keep = 0;
-	(*d)->try = false;
 
 	return (EPKG_OK);
 }
@@ -169,49 +126,6 @@ void
 pkg_dir_free(struct pkg_dir *d)
 {
 	free(d);
-}
-
-const char *
-pkg_dir_get(struct pkg_dir const * const d, const pkg_dir_attr attr)
-{
-	assert(d != NULL);
-	switch (attr) {
-	case PKG_DIR_PATH:
-		return (d->path);
-		break;
-	case PKG_DIR_UNAME:
-		return (d->uname);
-		break;
-	case PKG_DIR_GNAME:
-		return (d->gname);
-		break;
-	default:
-		return(NULL);
-	}
-}
-
-mode_t
-pkg_dir_mode(struct pkg_dir const * const d)
-{
-	assert(d != NULL);
-
-	return (d->perm);
-}
-
-bool
-pkg_dir_keep(struct pkg_dir const * const d)
-{
-	assert(d != NULL);
-
-	return (d->keep);
-}
-
-bool
-pkg_dir_try(struct pkg_dir const * const d)
-{
-	assert(d != NULL);
-
-	return (d->try);
 }
 
 /*
@@ -235,22 +149,6 @@ pkg_user_free(struct pkg_user *u)
 	free(u);
 }
 
-const char *
-pkg_user_name(struct pkg_user const * const u)
-{
-	assert(u != NULL);
-
-	return (u->name);
-}
-
-const char *
-pkg_user_uidstr(struct pkg_user const * const u)
-{
-	assert(u != NULL);
-
-	return (u->uidstr);
-}
-
 /*
  * Group
  */
@@ -270,22 +168,6 @@ void
 pkg_group_free(struct pkg_group *g)
 {
 	free(g);
-}
-
-const char *
-pkg_group_name(struct pkg_group const * const g)
-{
-	assert(g != NULL);
-
-	return (g->name);
-}
-
-const char *
-pkg_group_gidstr(struct pkg_group const * const g)
-{
-	assert(g != NULL);
-
-	return (g->gidstr);
 }
 
 /*
@@ -449,4 +331,78 @@ pkg_provide_name(const struct pkg_provide *c)
 	assert(c != NULL);
 
 	return (sbuf_get(c->provide));
+}
+
+/*
+ * Config files
+ */
+int
+pkg_config_file_new(struct pkg_config_file **c)
+{
+	if ((*c = calloc(1, sizeof(struct pkg_config_file))) == NULL)
+		return (EPKG_FATAL);
+
+	return (EPKG_OK);
+}
+
+void
+pkg_config_file_free(struct pkg_config_file *c)
+{
+	if (c == NULL)
+		return;
+
+	free(c->content);
+	free(c);
+}
+
+/*
+ * strel
+ */
+
+int
+pkg_strel_new(struct pkg_strel **c, const char *val)
+{
+	if ((*c = calloc(1, sizeof(struct pkg_strel))) == NULL)
+		return (EPKG_FATAL);
+
+	(*c)->value = strdup(val);
+
+	return (EPKG_OK);
+}
+
+void
+pkg_strel_free(struct pkg_strel *c)
+{
+	if (c == NULL)
+		return;
+
+	free(c->value);
+	free(c);
+}
+
+/*
+ * kv
+ */
+
+int
+pkg_kv_new(struct pkg_kv **c, const char *key, const char *val)
+{
+	if ((*c = calloc(1, sizeof(struct pkg_kv))) == NULL)
+		return (EPKG_FATAL);
+
+	(*c)->key = strdup(key);
+	(*c)->value = strdup(val);
+
+	return (EPKG_OK);
+}
+
+void
+pkg_kv_free(struct pkg_kv *c)
+{
+	if (c == NULL)
+		return;
+
+	free(c->key);
+	free(c->value);
+	free(c);
 }

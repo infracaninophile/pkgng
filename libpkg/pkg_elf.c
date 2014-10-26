@@ -104,7 +104,6 @@ static int
 add_shlibs_to_pkg(__unused void *actdata, struct pkg *pkg, const char *fpath,
 		  const char *name, bool is_shlib)
 {
-	const char *pkgname, *pkgversion;
 	struct pkg_file *file = NULL;
 	const char *filepath;
 
@@ -121,16 +120,15 @@ add_shlibs_to_pkg(__unused void *actdata, struct pkg *pkg, const char *fpath,
 			return (EPKG_OK);
 
 		while (pkg_files(pkg, &file) == EPKG_OK) {
-			filepath = pkg_file_path(file);
+			filepath = file->path;
 			if (strcmp(&filepath[strlen(filepath) - strlen(name)], name) == 0) {
 				pkg_addshlib_required(pkg, name);
 				return (EPKG_OK);
 			}
 		}
 
-		pkg_get(pkg, PKG_NAME, &pkgname, PKG_VERSION, &pkgversion);
 		pkg_emit_notice("(%s-%s) %s - required shared library %s not "
-		    "found", pkgname, pkgversion, fpath, name);
+		    "found", pkg->name, pkg->version, fpath, name);
 
 		return (EPKG_FATAL);
 	}
@@ -448,7 +446,6 @@ pkg_analyse_files(struct pkgdb *db, struct pkg *pkg, const char *stage)
 	struct pkg_shlib *sh, *shtmp, *found;
 	int ret = EPKG_OK;
 	char fpath[MAXPATHLEN];
-	const char *origin;
 	bool developer = false, failures = false;
 
 	developer = pkg_object_bool(pkg_config_get("DEVELOPER_MODE"));
@@ -473,9 +470,9 @@ pkg_analyse_files(struct pkgdb *db, struct pkg *pkg, const char *stage)
 
 	while (pkg_files(pkg, &file) == EPKG_OK) {
 		if (stage != NULL)
-			snprintf(fpath, sizeof(fpath), "%s/%s", stage, pkg_file_path(file));
+			snprintf(fpath, sizeof(fpath), "%s/%s", stage, file->path);
 		else
-			strlcpy(fpath, pkg_file_path(file), sizeof(fpath));
+			strlcpy(fpath, file->path, sizeof(fpath));
 
 		ret = analyse_elf(pkg, fpath, add_shlibs_to_pkg, db);
 		if (developer) {
@@ -487,7 +484,6 @@ pkg_analyse_files(struct pkgdb *db, struct pkg *pkg, const char *stage)
 		}
 	}
 
-	pkg_get(pkg, PKG_ORIGIN, &origin);
 	/*
 	 * Do not depend on libraries that a package provides itself
 	 */
@@ -496,7 +492,7 @@ pkg_analyse_files(struct pkgdb *db, struct pkg *pkg, const char *stage)
 		if (found != NULL) {
 			pkg_debug(2, "remove %s from required shlibs as the "
 			    "package %s provides this library itself",
-			    pkg_shlib_name(sh), origin);
+			    pkg_shlib_name(sh), pkg->name);
 			HASH_DEL(pkg->shlibs_required, sh);
 		}
 	}
@@ -505,7 +501,7 @@ pkg_analyse_files(struct pkgdb *db, struct pkg *pkg, const char *stage)
 	 * if the package is not supposed to provide share libraries then
 	 * drop the provided one
 	 */
-	if (pkg_getannotation(pkg, "no_provide_shlib") != NULL)
+	if (pkg_kv_get(&pkg->annotations, "no_provide_shlib") != NULL)
 		HASH_FREE(pkg->shlibs_provided, pkg_shlib_free);
 
 	if (failures)
@@ -890,6 +886,46 @@ cleanup:
 }
 
 int
+pkg_arch_to_legacy(const char *arch, char *dest, size_t sz)
+{
+	int i = 0;
+	struct arch_trans *arch_trans;
+
+	bzero(dest, sz);
+	/* Lower case the OS */
+	while (arch[i] != ':' && arch[i] != '\0') {
+		dest[i] = tolower(arch[i]);
+		i++;
+	}
+	if (arch[i] == '\0')
+		return (0);
+
+	dest[i++] = ':';
+
+	/* Copy the version */
+	while (arch[i] != ':' && arch[i] != '\0') {
+		dest[i] = arch[i];
+		i++;
+	}
+	if (arch[i] == '\0')
+		return (0);
+
+	dest[i++] = ':';
+
+	for (arch_trans = machine_arch_translation; arch_trans->elftype != NULL;
+	    arch_trans++) {
+		if (strcmp(arch + i, arch_trans->archid) == 0) {
+			strlcpy(dest + i, arch_trans->elftype,
+			    sz - (arch + i - dest));
+			return (0);
+		}
+	}
+	strlcpy(dest + i, arch + i, sz - (arch + i  - dest));
+
+	return (0);
+}
+
+int
 pkg_get_myarch_legacy(char *dest, size_t sz)
 {
 	int i, err;
@@ -941,7 +977,7 @@ pkg_suggest_arch(struct pkg *pkg, const char *arch, bool isdefault)
 {
 	bool iswildcard;
 
-	iswildcard = (strchr(arch, 'c') != NULL);
+	iswildcard = (strchr(arch, '*') != NULL);
 
 	if (iswildcard && isdefault)
 		pkg_emit_developer_mode("Configuration error: arch \"%s\" "

@@ -56,8 +56,6 @@ static const char * const scripts[] = {
 int
 pkg_old_load_from_path(struct pkg *pkg, const char *path)
 {
-	char *desc;
-	char *www;
 	char fpath[MAXPATHLEN];
 	regex_t preg;
 	regmatch_t pmatch[2];
@@ -95,17 +93,14 @@ pkg_old_load_from_path(struct pkg *pkg, const char *path)
 	}
 
 	pkg_get_myarch(myarch, BUFSIZ);
-	pkg_set(pkg, PKG_ARCH, myarch);
-	pkg_set(pkg, PKG_MAINTAINER, "unknown");
-	pkg_get(pkg, PKG_DESC, &desc);
+	pkg->arch = strdup(myarch);
+	pkg->maintainer = strdup("unknown");
 	regcomp(&preg, "^WWW:[[:space:]]*(.*)$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
-	if (regexec(&preg, desc, 2, pmatch, 0) == 0) {
+	if (regexec(&preg, pkg->desc, 2, pmatch, 0) == 0) {
 		size = pmatch[1].rm_eo - pmatch[1].rm_so;
-		www = strndup(&desc[pmatch[1].rm_so], size);
-		pkg_set(pkg, PKG_WWW, www);
-		free(www);
+		pkg->www = strndup(&pkg->desc[pmatch[1].rm_so], size);
 	} else {
-		pkg_set(pkg, PKG_WWW, "UNKNOWN");
+		pkg->www = strdup("UNKNOWN");
 	}
 	regfree(&preg);
 
@@ -145,20 +140,14 @@ pkg_old_emit_content(struct pkg *pkg, char **dest)
 		sbuf_printf(content,
 		    "%s\n"
 		    "@comment MD5:%s\n",
-		     pkg_file_path(file) + 1,
-		     pkg_file_cksum(file));
+		     file->path + 1,
+		     file->sum);
 	}
 
 	while (pkg_dirs(pkg, &dir) == EPKG_OK) {
-		if (pkg_dir_try(dir)) {
-			sbuf_printf(content,
-			    "@dirrm %s\n",
-			    pkg_dir_path(dir));
-		} else {
-			sbuf_printf(content,
-			    "@unexec /sbin/rmdir \"%s\" 2>/dev/null\n",
-			    pkg_dir_path(dir));
-		}
+		sbuf_printf(content,
+		    "@unexec /sbin/rmdir \"%s\" 2>/dev/null\n",
+		    dir->path);
 	}
 
 	sbuf_printf(content, "@comment OPTIONS:");
@@ -189,14 +178,12 @@ pkg_to_old(struct pkg *p)
 {
 	struct pkg_file *f = NULL;
 	char md5[MD5_DIGEST_LENGTH * 2 + 1];
-	const char *sum;
 
 	p->type = PKG_OLD_FILE;
 	while (pkg_files(p, &f) == EPKG_OK) {
-		sum = pkg_file_cksum(f);
-		if (sum == NULL || sum[0] == '\0')
+		if (f->sum[0] == '\0')
 			continue;
-		if (md5_file(pkg_file_path(f), md5) == EPKG_OK)
+		if (md5_file(f->path, md5) == EPKG_OK)
 			strlcpy(f->sum, md5, sizeof(f->sum));
 	}
 
@@ -208,14 +195,12 @@ pkg_from_old(struct pkg *p)
 {
 	struct pkg_file *f = NULL;
 	char sha256[SHA256_DIGEST_LENGTH * 2 + 1];
-	const char *sum;
 
 	p->type = PKG_INSTALLED;
 	while (pkg_files(p, &f) == EPKG_OK) {
-		sum = pkg_file_cksum(f);
-		if (sum == NULL || sum[0] == '\0')
+		if (f->sum[0] == '\0')
 			continue;
-		if (sha256_file(pkg_file_path(f), sha256) == EPKG_OK)
+		if (sha256_file(f->path, sha256) == EPKG_OK)
 			strlcpy(f->sum, sha256, sizeof(f->sum));
 	}
 
@@ -226,7 +211,7 @@ int
 pkg_register_old(struct pkg *pkg)
 {
 	FILE *fp;
-	char *name, *version, *content, *buf;
+	char *content;
 	const char *pkgdbdir, *tmp;
 	char path[MAXPATHLEN];
 	struct sbuf *install_script = sbuf_new_auto();
@@ -234,35 +219,31 @@ pkg_register_old(struct pkg *pkg)
 	struct pkg_dep *dep = NULL;
 
 	pkg_to_old(pkg);
-	pkg_get(pkg, PKG_NAME, &name, PKG_VERSION, &version);
 	pkg_old_emit_content(pkg, &content);
 
 	pkgdbdir = pkg_object_string(pkg_config_get("PKG_DBDIR"));
-	snprintf(path, sizeof(path), "%s/%s-%s", pkgdbdir, name, version);
+	pkg_snprintf(path, sizeof(path), "%S/%n-%v", pkgdbdir, pkg, pkg);
 	mkdir(path, 0755);
 
-	snprintf(path, sizeof(path), "%s/%s-%s/+CONTENTS", pkgdbdir, name, version);
+	pkg_snprintf(path, sizeof(path), "%S/%n-%v/+CONTENTS", pkgdbdir, pkg, pkg);
 	fp = fopen(path, "w");
 	fputs(content, fp);
 	fclose(fp);
 
-	pkg_get(pkg, PKG_DESC, &buf);
-	snprintf(path, sizeof(path), "%s/%s-%s/+DESC", pkgdbdir, name, version);
+	pkg_snprintf(path, sizeof(path), "%S/%n-%v/+DESC", pkgdbdir, pkg, pkg);
 	fp = fopen(path, "w");
-	fputs(buf, fp);
+	pkg_fprintf(fp, "%e", pkg);
 	fclose(fp);
 
-	pkg_get(pkg, PKG_COMMENT, &buf);
-	snprintf(path, sizeof(path), "%s/%s-%s/+COMMENT", pkgdbdir, name, version);
+	pkg_snprintf(path, sizeof(path), "%s/%n-%v/+COMMENT", pkgdbdir, pkg, pkg);
 	fp = fopen(path, "w");
-	fprintf(fp, "%s\n", buf);
+	pkg_fprintf(fp, "%c\n", pkg);
 	fclose(fp);
 
-	pkg_get(pkg, PKG_MESSAGE, &buf);
-	if (buf != NULL && *buf != '\0') {
-		snprintf(path, sizeof(path), "%s/%s-%s/+DISPLAY", pkgdbdir, name, version);
+	if (pkg_has_message(pkg)) {
+		pkg_snprintf(path, sizeof(path), "%s/%n-%v/+DISPLAY", pkgdbdir, pkg, pkg);
 		fp = fopen(path, "w");
-		fputs(buf, fp);
+		pkg_fprintf(fp, "%M", pkg);
 		fclose(fp);
 	}
 
@@ -297,7 +278,7 @@ pkg_register_old(struct pkg *pkg)
 	}
 	if (sbuf_len(install_script) > 0) {
 		sbuf_finish(install_script);
-		snprintf(path, sizeof(path), "%s/%s-%s/+INSTALL", pkgdbdir, name, version);
+		pkg_snprintf(path, sizeof(path), "%s/%n-%v/+INSTALL", pkgdbdir, pkg, pkg);
 		fp = fopen(path, "w");
 		fputs(sbuf_data(install_script), fp);
 		fclose(fp);
@@ -334,7 +315,7 @@ pkg_register_old(struct pkg *pkg)
 	}
 	if (sbuf_len(deinstall_script) > 0) {
 		sbuf_finish(deinstall_script);
-		snprintf(path, sizeof(path), "%s/%s-%s/+DEINSTALL", pkgdbdir, name, version);
+		pkg_snprintf(path, sizeof(path), "%s/%n-%v/+DEINSTALL", pkgdbdir, pkg, pkg);
 		fp = fopen(path, "w");
 		fputs(sbuf_data(deinstall_script), fp);
 		fclose(fp);
@@ -344,7 +325,7 @@ pkg_register_old(struct pkg *pkg)
 		snprintf(path, sizeof(path), "%s/%s-%s/+REQUIRED_BY", pkgdbdir,
 		    pkg_dep_name(dep), pkg_dep_version(dep));
 		fp = fopen(path, "a");
-		fprintf(fp, "%s-%s\n", name, version);
+		pkg_fprintf(fp, "%n-%v\n", pkg, pkg);
 		fclose(fp);
 	}
 

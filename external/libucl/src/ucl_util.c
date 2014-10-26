@@ -143,15 +143,18 @@ ucl_object_dtor_free (ucl_object_t *obj)
 	if (obj->trash_stack[UCL_TRASH_VALUE] != NULL) {
 		UCL_FREE (obj->len, obj->trash_stack[UCL_TRASH_VALUE]);
 	}
-	if (obj->type != UCL_USERDATA) {
-		UCL_FREE (sizeof (ucl_object_t), obj);
-	}
-	else {
-		struct ucl_object_userdata *ud = (struct ucl_object_userdata *)obj;
-		if (ud->dtor) {
-			ud->dtor (obj->value.ud);
+	/* Do not free ephemeral objects */
+	if ((obj->flags & UCL_OBJECT_EPHEMERAL) == 0) {
+		if (obj->type != UCL_USERDATA) {
+			UCL_FREE (sizeof (ucl_object_t), obj);
 		}
-		UCL_FREE (sizeof (*ud), obj);
+		else {
+			struct ucl_object_userdata *ud = (struct ucl_object_userdata *)obj;
+			if (ud->dtor) {
+				ud->dtor (obj->value.ud);
+			}
+			UCL_FREE (sizeof (*ud), obj);
+		}
 	}
 }
 
@@ -965,6 +968,36 @@ ucl_parser_add_file (struct ucl_parser *parser, const char *filename)
 	return ret;
 }
 
+UCL_EXTERN bool
+ucl_parser_add_fd (struct ucl_parser *parser, int fd)
+{
+	unsigned char *buf;
+	size_t len;
+	bool ret;
+	struct stat st;
+
+	if (fstat (fd, &st) == -1) {
+		ucl_create_err (&parser->err, "cannot stat fd %d: %s",
+			fd, strerror (errno));
+		return false;
+	}
+	if ((buf = ucl_mmap (NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0)) == MAP_FAILED) {
+		ucl_create_err (&parser->err, "cannot mmap fd %d: %s",
+			fd, strerror (errno));
+		return false;
+	}
+
+	parser->cur_file = NULL;
+	len = st.st_size;
+	ret = ucl_parser_add_chunk (parser, buf, len);
+
+	if (len > 0) {
+		ucl_munmap (buf, len);
+	}
+
+	return ret;
+}
+
 size_t
 ucl_strlcpy (char *dst, const char *src, size_t siz)
 {
@@ -1385,9 +1418,6 @@ ucl_iterate_object (const ucl_object_t *obj, ucl_object_iter_t *iter, bool expan
 	elt = *iter;
 	if (elt == NULL) {
 		elt = obj;
-		if (elt == NULL) {
-			return NULL;
-		}
 	}
 	else if (elt == obj) {
 		return NULL;
@@ -1884,12 +1914,22 @@ ucl_object_ref (const ucl_object_t *obj)
 	ucl_object_t *res = NULL;
 
 	if (obj != NULL) {
-		res = __DECONST (ucl_object_t *, obj);
+		if (obj->flags & UCL_OBJECT_EPHEMERAL) {
+			/*
+			 * Use deep copy for ephemeral objects, note that its refcount
+			 * is NOT increased, since ephemeral objects does not need refcount
+			 * at all
+			 */
+			res = ucl_object_copy (obj);
+		}
+		else {
+			res = __DECONST (ucl_object_t *, obj);
 #ifdef HAVE_ATOMIC_BUILTINS
-		(void)__sync_add_and_fetch (&res->ref, 1);
+			(void)__sync_add_and_fetch (&res->ref, 1);
 #else
-		res->ref ++;
+			res->ref ++;
 #endif
+		}
 	}
 	return res;
 }
@@ -1906,6 +1946,10 @@ ucl_object_copy_internal (const ucl_object_t *other, bool allow_array)
 
 	if (new != NULL) {
 		memcpy (new, other, sizeof (*new));
+		if (other->flags & UCL_OBJECT_EPHEMERAL) {
+			/* Copied object is always non ephemeral */
+			new->flags &= ~UCL_OBJECT_EPHEMERAL;
+		}
 		new->ref = 1;
 		/* Unlink from others */
 		new->next = NULL;

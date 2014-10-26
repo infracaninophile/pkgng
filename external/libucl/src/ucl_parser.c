@@ -587,6 +587,7 @@ ucl_add_parser_stack (ucl_object_t *obj, struct ucl_parser *parser, bool is_arra
 	if (st == NULL) {
 		ucl_set_err (parser, 0, "cannot allocate memory for an object",
 				&parser->err);
+		ucl_object_unref (obj);
 		return NULL;
 	}
 	st->obj = obj;
@@ -1263,7 +1264,7 @@ ucl_parse_multiline_string (struct ucl_parser *parser,
 		int term_len, unsigned char const **beg,
 		bool *var_expand)
 {
-	const unsigned char *p, *c;
+	const unsigned char *p, *c, *tend;
 	bool newline = false;
 	int len = 0;
 
@@ -1276,7 +1277,13 @@ ucl_parse_multiline_string (struct ucl_parser *parser,
 			if (chunk->end - p < term_len) {
 				return 0;
 			}
-			else if (memcmp (p, term, term_len) == 0 && (p[term_len] == '\n' || p[term_len] == '\r')) {
+			else if (memcmp (p, term, term_len) == 0) {
+				tend = p + term_len;
+				if (*tend != '\n' && *tend != ';' && *tend != ',') {
+					/* Incomplete terminator */
+					ucl_chunk_skipc (chunk, p);
+					continue;
+				}
 				len = p - c;
 				chunk->remain -= term_len;
 				chunk->pos = p + term_len;
@@ -1705,7 +1712,6 @@ ucl_state_machine (struct ucl_parser *parser)
 			 * if we got [ or { correspondingly or can just treat new data as
 			 * a key of newly created object
 			 */
-			obj = parser->cur_obj;
 			if (!ucl_skip_comments (parser)) {
 				parser->prev_state = parser->state;
 				parser->state = UCL_STATE_ERROR;

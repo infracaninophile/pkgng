@@ -526,26 +526,24 @@ cleanup:
 	return (ret);
 }
 
-int
-is_conf_file(const char *path, char *newpath, size_t len)
+bool
+string_end_with(const char *path, const char *str)
 {
-	size_t n;
+	size_t n, s;
 	const char *p = NULL;
 
+	s = strlen(str);
 	n = strlen(path);
 
-	if (n < 8)
-		return (0);
+	if (n < s)
+		return (false);
 
-	p = &path[n - 8];
+	p = &path[n - s];
 
-	if (strcmp(p, ".pkgconf") == 0) {
-		strlcpy(newpath, path, len);
-		newpath[n - 8] = '\0';
-		return (1);
-	}
+	if (strcmp(p, str) == 0)
+		return (true);
 
-	return (0);
+	return (false);
 }
 
 bool
@@ -987,4 +985,54 @@ pkg_utils_count_spaces(const char *args)
 	return (spaces);
 }
 
+/* unlike realpath(3), this routine does not expand symbolic links */
+char *
+pkg_absolutepath(const char *src, char *dest, size_t dest_size) {
+	size_t dest_len, src_len, cur_len;
+	const char *cur, *next;
 
+	src_len = strlen(src);
+	bzero(dest, dest_size);
+	if (src_len != 0 && src[0] != '/') {
+		/* relative path, we use cwd */
+		if (getcwd(dest, dest_size) == NULL)
+			return (NULL);
+	}
+	dest_len = strlen(dest);
+
+	for (cur = next = src; next != NULL; cur = next + 1) {
+		next = strchr(cur, '/');
+		if (next != NULL)
+			cur_len = next - cur;
+		else
+			cur_len = strlen(cur);
+
+		/* check for special cases "", "." and ".." */
+		if (cur_len == 0)
+			continue;
+		else if (cur_len == 1 && cur[0] == '.')
+			continue;
+		else if (cur_len == 2 && cur[0] == '.' && cur[1] == '.') {
+			const char *slash = strrchr(dest, '/');
+			if (slash != NULL) {
+				dest_len = slash - dest;
+				dest[dest_len] = '\0';
+			}
+			continue;
+		}
+
+		if (dest_len + 1 + cur_len >= dest_size)
+			return (NULL);
+		dest[dest_len++] = '/';
+		(void)memcpy(dest + dest_len, cur, cur_len);
+		dest_len += cur_len;
+		dest[dest_len] = '\0';
+	}
+
+	if (dest_len == 0) {
+		if (strlcpy(dest, "/", dest_size) >= dest_size)
+			return (NULL);
+	}
+
+	return (dest);
+}

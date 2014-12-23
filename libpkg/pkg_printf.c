@@ -895,7 +895,7 @@ format_shlib_name(struct sbuf *sbuf, const void *data, struct percent_esc *p)
 {
 	const struct pkg_shlib	*shlib = data;
 
-	return (string_val(sbuf, pkg_shlib_name(shlib), p));
+	return (string_val(sbuf, shlib->name, p));
 }
 
 /*
@@ -1288,7 +1288,7 @@ format_option_name(struct sbuf *sbuf, const void *data, struct percent_esc *p)
 {
 	const struct pkg_option	*option = data;
 
-	return (string_val(sbuf, pkg_option_opt(option), p));
+	return (string_val(sbuf, option->key, p));
 }
 
 /*
@@ -1299,7 +1299,7 @@ format_option_value(struct sbuf *sbuf, const void *data, struct percent_esc *p)
 {
 	const struct pkg_option	*option = data;
 
-	return (string_val(sbuf, pkg_option_value(option), p));
+	return (string_val(sbuf, option->value, p));
 }
 
 /*
@@ -1310,7 +1310,7 @@ format_option_default(struct sbuf *sbuf, const void *data, struct percent_esc *p
 {
 	const struct pkg_option	*option = data;
 
-	return (string_val(sbuf, pkg_option_default_value(option), p));
+	return (string_val(sbuf, option->value, p));
 }
 
 /*
@@ -1321,7 +1321,7 @@ format_option_description(struct sbuf *sbuf, const void *data, struct percent_es
 {
 	const struct pkg_option	*option = data;
 
-	return (string_val(sbuf, pkg_option_description(option), p));
+	return (string_val(sbuf, option->description, p));
 }
 
 /*
@@ -1522,7 +1522,7 @@ format_dependency_name(struct sbuf *sbuf, const void *data,
 {
 	const struct pkg_dep	*dep = data;
 
-	return (string_val(sbuf, pkg_dep_name(dep), p));
+	return (string_val(sbuf, dep->name, p));
 }
 
 /*
@@ -1534,7 +1534,7 @@ format_dependency_origin(struct sbuf *sbuf, const void *data,
 {
 	const struct pkg_dep	*dep = data;
 
-	return (string_val(sbuf, pkg_dep_origin(dep), p));
+	return (string_val(sbuf, dep->origin, p));
 }
 
 /*
@@ -1546,7 +1546,7 @@ format_dependency_version(struct sbuf *sbuf, const void *data,
 {
 	const struct pkg_dep	*dep = data;
 
-	return (string_val(sbuf, pkg_dep_version(dep), p));
+	return (string_val(sbuf, dep->version, p));
 }
 
 /*
@@ -1570,7 +1570,7 @@ format_lock_status(struct sbuf *sbuf, const void *data, struct percent_esc *p)
 {
 	const struct pkg	*pkg = data;
 
-	return (bool_val(sbuf, pkg_is_locked(pkg), p));
+	return (bool_val(sbuf, pkg->locked, p));
 }
 
 /*

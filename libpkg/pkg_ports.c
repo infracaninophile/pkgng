@@ -192,7 +192,7 @@ setprefix(struct plist *p, char *line, struct file_attr *a)
 	pre_unexec_append(p->pre_deinstall_buf, "cd %s\n", p->prefix);
 	post_unexec_append(p->post_deinstall_buf, "cd %s\n", p->prefix);
 
-	free(a);
+	free_file_attr(a);
 
 	return (EPKG_OK);
 }
@@ -203,7 +203,8 @@ name_key(struct plist *p, char *line, struct file_attr *a)
 	char *tmp;
 
 	if (p->pkg->name != NULL) {
-		free(a);
+		free_file_attr(a);
+
 		return (EPKG_OK);
 	}
 	tmp = strrchr(line, '-');
@@ -212,7 +213,8 @@ name_key(struct plist *p, char *line, struct file_attr *a)
 	p->pkg->name = strdup(line);
 	p->pkg->version = strdup(tmp);
 
-	free(a);
+	free_file_attr(a);
+
 	return (EPKG_OK);
 }
 
@@ -223,7 +225,8 @@ pkgdep(struct plist *p, char *line, struct file_attr *a)
 		free(p->pkgdep);
 		p->pkgdep = strdup(line);
 	}
-	free(a);
+	free_file_attr(a);
+
 	return (EPKG_OK);
 }
 
@@ -235,7 +238,6 @@ dir(struct plist *p, char *line, struct file_attr *a)
 	char stagedpath[MAXPATHLEN];
 	char *testpath;
 	struct stat st;
-	bool developer;
 	int ret = EPKG_OK;
 
 	len = strlen(line);
@@ -260,8 +262,7 @@ dir(struct plist *p, char *line, struct file_attr *a)
 		pkg_emit_errno("lstat", testpath);
 		if (p->stage != NULL)
 			ret = EPKG_FATAL;
-		developer = pkg_object_bool(pkg_config_get("DEVELOPER_MODE"));
-		if (developer) {
+		if (developer_mode) {
 			pkg_emit_developer_mode("Plist error: @dirrm %s", line);
 			ret = EPKG_FATAL;
 		}
@@ -290,7 +291,7 @@ warn_deprecated_dir(void)
 		return;
 	warned_deprecated_dir = true;
 
-	if (pkg_object_bool(pkg_config_get("DEVELOPER_MODE")))
+	if (developer_mode)
 		pkg_emit_error("Warning: @dirrm[try] is deprecated, please"
 		    " use @dir");
 }
@@ -313,7 +314,6 @@ meta_file(struct plist *p, char *line, struct file_attr *a, bool is_config)
 	struct stat st;
 	char *buf;
 	bool regular = false;
-	bool developer;
 	char sha256[SHA256_DIGEST_LENGTH * 2 + 1];
 	int ret = EPKG_OK;
 
@@ -335,79 +335,83 @@ meta_file(struct plist *p, char *line, struct file_attr *a, bool is_config)
 	}
 
 	if (lstat(testpath, &st) == -1) {
-		pkg_emit_errno("lstat", testpath);
+		pkg_emit_error("Unable to access file %s: %s", testpath,
+		    strerror(errno));
 		if (p->stage != NULL)
 			ret = EPKG_FATAL;
-		developer = pkg_object_bool(pkg_config_get("DEVELOPER_MODE"));
-		if (developer) {
-			pkg_emit_developer_mode("Plist error, missing file: %s", line);
+		if (developer_mode) {
+			pkg_emit_developer_mode("Plist error, missing file: %s",
+			    line);
 			ret = EPKG_FATAL;
 		}
-	} else {
-		buf = NULL;
-		regular = false;
+		free_file_attr(a);
+		return (ret);
+	}
+	buf = NULL;
+	regular = false;
 
-		if (S_ISREG(st.st_mode)) {
-			if (st.st_nlink > 1)
-				regular = !check_for_hardlink(&(p->hardlinks), &st);
-			else
-				regular = true;
-
-		} else if (S_ISLNK(st.st_mode)) {
-			if (pkg_symlink_cksum(testpath, p->stage, sha256) == EPKG_OK) {
-				buf = sha256;
-				regular = false;
-			}
-			else
-				return (EPKG_FATAL);
-		}
-
-		if (regular) {
-			p->flatsize += st.st_size;
-			if (pkg_type(p->pkg) == PKG_OLD_FILE)
-				md5_file(testpath, sha256);
-			else
-				sha256_file(testpath, sha256);
+	if (S_ISREG(st.st_mode)) {
+		if (st.st_nlink > 1)
+			regular = !check_for_hardlink(&(p->hardlinks), &st);
+		else
+			regular = true;
+	} else if (S_ISLNK(st.st_mode)) {
+		if (pkg_symlink_cksum(testpath, p->stage, sha256) == EPKG_OK) {
 			buf = sha256;
-			if (is_config) {
-				size_t sz;
-				char *content;
-				file_to_buffer(testpath, &content, &sz);
-				pkg_addconfig_file(p->pkg, path, content);
-				free(content);
-			}
+			regular = false;
 		} else {
-			if (is_config) {
-				pkg_emit_error("Plist error, @config %s: not a regular file", line);
-				return (EPKG_FATAL);
-			}
-		}
-		if (S_ISDIR(st.st_mode) &&
-		    !pkg_object_bool(pkg_config_get("PLIST_ACCEPT_DIRECTORIES"))) {
-			pkg_emit_error("Plist error, directory listed as a file: %s", line);
 			free_file_attr(a);
 			return (EPKG_FATAL);
 		}
-		if (S_ISDIR(st.st_mode)) {
-			if (a != NULL)
-				ret = pkg_adddir_attr(p->pkg, path,
-				    a->owner ? a->owner : p->uname,
-				    a->group ? a->group : p->gname,
-				    a->mode ? a->mode : p->perm,
-				    true, true);
-			else
-				ret = pkg_adddir_attr(p->pkg, path, p->uname, p->gname,
-				    p->perm, true, true);
-		} else {
-			if (a != NULL)
-				ret = pkg_addfile_attr(p->pkg, path, buf,
-				    a->owner ? a->owner : p->uname,
-				    a->group ? a->group : p->gname,
-				    a->mode ? a->mode : p->perm, true);
-			else
-				ret = pkg_addfile_attr(p->pkg, path, buf, p->uname,
-				    p->gname, p->perm, true);
+	}
+
+	if (regular) {
+		p->flatsize += st.st_size;
+		sha256_file(testpath, sha256);
+		buf = sha256;
+		if (is_config) {
+			size_t sz;
+			char *content;
+			file_to_buffer(testpath, &content, &sz);
+			pkg_addconfig_file(p->pkg, path, content);
+			free(content);
 		}
+	} else {
+		if (is_config) {
+			pkg_emit_error("Plist error, @config %s: not a regular "
+			    "file", line);
+			free_file_attr(a);
+			return (EPKG_FATAL);
+		}
+	}
+
+	if (S_ISDIR(st.st_mode) &&
+	    !pkg_object_bool(pkg_config_get("PLIST_ACCEPT_DIRECTORIES"))) {
+		pkg_emit_error("Plist error, directory listed as a file: %s",
+		    line);
+		free_file_attr(a);
+		return (EPKG_FATAL);
+	}
+
+	if (S_ISDIR(st.st_mode)) {
+		if (a != NULL)
+			ret = pkg_adddir_attr(p->pkg, path,
+			    a->owner ? a->owner : p->uname,
+			    a->group ? a->group : p->gname,
+			    a->mode ? a->mode : p->perm,
+			    true, true);
+		else
+			ret = pkg_adddir_attr(p->pkg, path, p->uname, p->gname,
+			    p->perm, true, true);
+	} else {
+		if (a != NULL)
+			ret = pkg_addfile_attr(p->pkg, path, buf,
+			    a->owner ? a->owner : p->uname,
+			    a->group ? a->group : p->gname,
+			    a->mode ? a->mode : p->perm, true);
+		else
+			ret = pkg_addfile_attr(p->pkg, path, buf, p->uname,
+			    p->gname, p->perm, true);
 	}
 
 	free_file_attr(a);
@@ -1225,7 +1229,7 @@ ports_parse_plist(struct pkg *pkg, const char *plist, const char *stage)
 
 int
 pkg_add_port(struct pkgdb *db, struct pkg *pkg, const char *input_path,
-    const char *location, bool testing, bool old)
+    const char *location, bool testing)
 {
 	int rc = EPKG_OK;
 
@@ -1234,8 +1238,7 @@ pkg_add_port(struct pkgdb *db, struct pkg *pkg, const char *input_path,
 
 	pkg_emit_install_begin(pkg);
 
-	if (!old)
-		rc = pkgdb_register_pkg(db, pkg, 0, 0);
+	rc = pkgdb_register_pkg(db, pkg, 0, 0);
 
 	if (rc != EPKG_OK)
 		goto cleanup;
@@ -1256,9 +1259,6 @@ pkg_add_port(struct pkgdb *db, struct pkg *pkg, const char *input_path,
 		pkg_emit_install_finished(pkg);
 
 cleanup:
-	if (old)
-		return (pkg_register_old(pkg));
-
 	pkgdb_register_finale(db, rc);
 
 	return (rc);

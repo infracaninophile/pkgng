@@ -116,6 +116,8 @@
 	HASH_ADD(hh, head, type, sizeof(uint16_t), add)
 
 extern int eventpipe;
+extern int64_t debug_level;
+extern bool developer_mode;
 
 struct pkg_repo_it;
 struct pkg_repo;
@@ -179,9 +181,9 @@ struct pkg {
 };
 
 struct pkg_dep {
-	struct sbuf	*origin;
-	struct sbuf	*name;
-	struct sbuf	*version;
+	char		*origin;
+	char		*name;
+	char		*version;
 	char		*uid;
 	bool		 locked;
 	UT_hash_handle	 hh;
@@ -200,13 +202,13 @@ enum pkg_conflict_type {
 };
 
 struct pkg_conflict {
-	struct sbuf		*uniqueid;
+	char *uid;
 	enum pkg_conflict_type type;
 	UT_hash_handle	hh;
 };
 
 struct pkg_provide {
-	struct sbuf		*provide;
+	char	*provide;
 	UT_hash_handle	hh;
 };
 
@@ -229,10 +231,10 @@ struct pkg_dir {
 };
 
 struct pkg_option {
-	struct sbuf	*key;
-	struct sbuf	*value;
-	struct sbuf	*default_value;
-	struct sbuf	*description;
+	char	*key;
+	char	*value;
+	char	*default_value;
+	char	*description;
 	UT_hash_handle	hh;
 };
 
@@ -249,7 +251,7 @@ struct pkg_group {
 };
 
 struct pkg_shlib {
-	struct sbuf	*name;
+	char *name;
 	UT_hash_handle	hh;
 };
 
@@ -382,6 +384,8 @@ struct pkg_repo {
 
 	bool enable;
 	UT_hash_handle hh;
+
+	unsigned int priority;
 
 	pkg_repo_flags flags;
 
@@ -573,7 +577,7 @@ pkg_formats packing_format_from_string(const char *str);
 const char* packing_format_to_string(pkg_formats format);
 
 int pkg_delete_files(struct pkg *pkg, unsigned force);
-int pkg_delete_dirs(struct pkgdb *db, struct pkg *pkg);
+int pkg_delete_dirs(struct pkgdb *db, struct pkg *pkg, struct pkg *p);
 
 /* pkgdb commands */
 int sql_exec(sqlite3 *, const char *, ...);

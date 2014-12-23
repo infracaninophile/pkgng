@@ -675,7 +675,7 @@ pkgdb_load_conflicts(sqlite3 *sqlite, struct pkg *pkg)
 {
 	char		 sql[BUFSIZ];
 	const char	*basesql = ""
-			"SELECT packages.origin "
+			"SELECT packages.name "
 			"FROM %Q.pkg_conflicts "
 			"LEFT JOIN %Q.packages ON "
 			"packages.id = pkg_conflicts.conflict_id "
@@ -901,8 +901,7 @@ pkgdb_sqlite_it_next(struct pkgdb_sqlite_it *it,
 
 	switch (sqlite3_step(it->stmt)) {
 	case SQLITE_ROW:
-		if (*pkg_p != NULL)
-			pkg_free(*pkg_p);
+		pkg_free(*pkg_p);
 		ret = pkg_new(pkg_p, it->pkg_type);
 		if (ret != EPKG_OK)
 			return (ret);

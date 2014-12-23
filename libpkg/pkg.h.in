@@ -72,6 +72,10 @@
 #define __DECONST(type, var)    ((type)(uintptr_t)(const void *)(var))
 #endif
 
+#ifndef NELEM
+#define NELEM(array)    (sizeof(array) / sizeof((array)[0]))
+#endif
+
 /* Special exit status for worker processes indicating that a restart
  * is desired -- eg. after a child has updated pkg(8) itself.  Don't
  * clash with any of the sysexits values */
@@ -282,7 +286,10 @@ typedef enum {
 	PKG_SET_AUTOMATIC,
 	PKG_SET_LOCKED,
 	PKG_SET_DEPORIGIN,
-	PKG_SET_ORIGIN
+	PKG_SET_ORIGIN,
+	PKG_SET_DEPNAME,
+	PKG_SET_NAME,
+	PKG_SET_MAX
 } pkg_set_attr;
 
 /**
@@ -752,21 +759,6 @@ const char *pkg_license_name(struct pkg_license const * const);
 /* pkg_script */
 const char *pkg_script_get(struct pkg const * const, pkg_script);
 
-/* pkg_option */
-const char *pkg_option_opt(struct pkg_option const * const);
-const char *pkg_option_value(struct pkg_option const * const);
-const char *pkg_option_default_value(struct pkg_option const * const);
-const char *pkg_option_description(struct pkg_option const * const);
-
-/* pkg_shlib */
-const char *pkg_shlib_name(struct pkg_shlib const * const);
-
-/* pkg_conflict */
-const char *pkg_conflict_uniqueid(const struct pkg_conflict *);
-
-/* pkg_provide */
-const char *pkg_provide_name(const struct pkg_provide *);
-
 /**
  * @param db A pointer to a struct pkgdb object
  * @param origin Package origin
@@ -841,6 +833,16 @@ int pkgdb_upgrade_lock(struct pkgdb *db, pkgdb_lock_t old_type, pkgdb_lock_t new
 int pkgdb_downgrade_lock(struct pkgdb *db, pkgdb_lock_t old_type,
     pkgdb_lock_t new_type);
 int pkgdb_release_lock(struct pkgdb *db, pkgdb_lock_t type);
+
+/**
+ * Transaction/savepoint handling.
+ * @param savepoint -- if NULL or an empty string, use BEGIN, ROLLBACK, COMMIT
+ * otherwise use SAVEPOINT, ROLLBACK TO, RELEASE.
+ * @return an error code.
+ */
+int pkgdb_transaction_begin(struct pkgdb *db, const char *savepoint);
+int pkgdb_transaction_commit(struct pkgdb *db, const char *savepoint);
+int pkgdb_transaction_rollback(struct pkgdb *db, const char *savepoint);
 
 /**
  * Close and free the struct pkgdb.
@@ -1093,14 +1095,12 @@ int pkg_create_installed(const char *, pkg_formats, struct pkg *);
  * Create package from stage install using just the manifest --
  * no old pkg_tools compatibility stuff
  */
-int pkg_create_from_manifest(const char *, pkg_formats, const char *,
-			     const char *, bool);
+int pkg_create_from_manifest(const char *, pkg_formats, const char *, const char *);
 
 /**
  * Create package from stage install with a metadata directory
  */
-int pkg_create_staged(const char *, pkg_formats, const char *, const char *,
-		      char *, bool);
+int pkg_create_staged(const char *, pkg_formats, const char *, const char *, char *);
 
 /**
  * Download the latest repo db file and checks its signature if any
@@ -1428,15 +1428,16 @@ int pkg_test_filesum(struct pkg *);
 int pkg_recompute(struct pkgdb *, struct pkg *);
 int pkgdb_reanalyse_shlibs(struct pkgdb *, struct pkg *);
 
+#ifdef __DragonFly__
+#define pkg_get_myarch(d, z) pkg_get_myarch_legacy(d, z)
+#else
 int pkg_get_myarch(char *pkgarch, size_t sz);
+#endif
 int pkg_get_myarch_legacy(char *pkgarch, size_t sz);
 
 void pkgdb_cmd(int argc, char **argv);
 int pkg_old_load_from_path(struct pkg *pkg, const char *path);
-int pkg_old_emit_content(struct pkg *pkg, char **dest);
 int pkg_from_old(struct pkg *pkg);
-int pkg_to_old(struct pkg *pkg);
-int pkg_register_old(struct pkg *pkg);
 int pkg_sshserve(int fd);
 
 int pkg_repos_total_count(void);
@@ -1641,7 +1642,7 @@ void pkg_audit_free (struct pkg_audit *audit);
 char *pkg_utils_tokenize(char **);
 int pkg_utils_count_spaces(const char *);
 int pkg_add_port(struct pkgdb *db, struct pkg *pkg, const char *root, \
-    const char *locationn, bool testing, bool old);
+    const char *locationn, bool testing);
 char *pkg_absolutepath(const char *src, char *dest, size_t dest_len);
 
 #endif

@@ -46,9 +46,7 @@ pkg_create_from_dir(struct pkg *pkg, const char *root,
 	char		 fpath[MAXPATHLEN];
 	struct pkg_file	*file = NULL;
 	struct pkg_dir	*dir = NULL;
-	char		*m;
 	int		 ret;
-	bool		 developer;
 	struct stat	 st;
 	char		 sha256[SHA256_DIGEST_LENGTH * 2 + 1];
 	int64_t		 flatsize = 0;
@@ -95,13 +93,8 @@ pkg_create_from_dir(struct pkg *pkg, const char *root,
 		}
 		else {
 			if (file->sum[0] == '\0') {
-				if (pkg->type == PKG_OLD_FILE) {
-					if (md5_file(fpath, sha256) != EPKG_OK)
-						return (EPKG_FATAL);
-				} else {
-					if (sha256_file(fpath, sha256) != EPKG_OK)
-						return (EPKG_FATAL);
-				}
+				if (sha256_file(fpath, sha256) != EPKG_OK)
+					return (EPKG_FATAL);
 				strlcpy(file->sum, sha256, sizeof(file->sum));
 			}
 		}
@@ -110,16 +103,8 @@ pkg_create_from_dir(struct pkg *pkg, const char *root,
 	HASH_FREE(hardlinks, free);
 
 	if (pkg->type == PKG_OLD_FILE) {
-		char oldcomment[BUFSIZ];
-
-		pkg_old_emit_content(pkg, &m);
-		packing_append_buffer(pkg_archive, m, "+CONTENTS", strlen(m));
-		free(m);
-
-		packing_append_buffer(pkg_archive, pkg->desc, "+DESC", strlen(pkg->desc));
-		packing_append_buffer(pkg_archive, pkg->message, "+DISPLAY", strlen(pkg->message));
-		pkg_snprintf(oldcomment, sizeof(oldcomment), "%c\n", pkg);
-		packing_append_buffer(pkg_archive, oldcomment, "+COMMENT", strlen(oldcomment));
+		pkg_emit_error("Cannot create an old format package");
+		return (EPKG_FATAL);
 	} else {
 		/*
 		 * Register shared libraries used by the package if
@@ -145,8 +130,7 @@ pkg_create_from_dir(struct pkg *pkg, const char *root,
 
 		ret = packing_append_file_attr(pkg_archive, fpath, file->path,
 		    file->uname, file->gname, file->perm);
-		developer = pkg_object_bool(pkg_config_get("DEVELOPER_MODE"));
-		if (developer && ret != EPKG_OK)
+		if (developer_mode && ret != EPKG_OK)
 			return (ret);
 	}
 
@@ -156,8 +140,7 @@ pkg_create_from_dir(struct pkg *pkg, const char *root,
 
 		ret = packing_append_file_attr(pkg_archive, fpath, dir->path,
 		    dir->uname, dir->gname, dir->perm);
-		developer = pkg_object_bool(pkg_config_get("DEVELOPER_MODE"));
-		if (developer && ret != EPKG_OK)
+		if (developer_mode && ret != EPKG_OK)
 			return (ret);
 	}
 
@@ -221,7 +204,7 @@ static const char * const scripts[] = {
  * from the manifest */
 int
 pkg_create_from_manifest(const char *outdir, pkg_formats format,
-			 const char *rootdir, const char *manifest, bool old)
+    const char *rootdir, const char *manifest)
 {
 	struct pkg	*pkg = NULL;
 	struct packing	*pkg_archive = NULL;
@@ -231,7 +214,7 @@ pkg_create_from_manifest(const char *outdir, pkg_formats format,
 
 	pkg_debug(1, "Creating package from stage directory: '%s'", rootdir);
 
-	if(pkg_new(&pkg, old ? PKG_OLD_FILE : PKG_FILE) != EPKG_OK) {
+	if(pkg_new(&pkg, PKG_FILE) != EPKG_OK) {
 		ret = EPKG_FATAL;
 		goto cleanup;
 	}
@@ -278,7 +261,7 @@ pkg_load_from_file(int fd, struct pkg *pkg, pkg_attr attr, const char *path)
 
 int
 pkg_create_staged(const char *outdir, pkg_formats format, const char *rootdir,
-    const char *md_dir, char *plist, bool old)
+    const char *md_dir, char *plist)
 {
 	struct pkg	*pkg = NULL;
 	struct pkg_file	*file = NULL;
@@ -302,7 +285,7 @@ pkg_create_staged(const char *outdir, pkg_formats format, const char *rootdir,
 		goto cleanup;
 	}
 
-	if(pkg_new(&pkg, old ? PKG_OLD_FILE : PKG_FILE) != EPKG_OK) {
+	if(pkg_new(&pkg, PKG_FILE) != EPKG_OK) {
 		ret = EPKG_FATAL;
 		goto cleanup;
 	}
@@ -370,11 +353,11 @@ pkg_create_staged(const char *outdir, pkg_formats format, const char *rootdir,
 		/* Now traverse the file directories, adding to the archive */
 		packing_append_tree(pkg_archive, md_dir, NULL);
 		packing_append_tree(pkg_archive, rootdir, "/");
+		ret = EPKG_OK;
 	} else {
-		pkg_create_from_dir(pkg, rootdir, pkg_archive);
+		ret = pkg_create_from_dir(pkg, rootdir, pkg_archive);
 	}
 
-	ret = EPKG_OK;
 
 cleanup:
 	if (mfd != -1)

@@ -4,7 +4,6 @@ global:
 	pkg_add;
 	pkg_add_from_remote;
 	pkg_add_port;
-	pkg_addannotation;
 	pkg_adddep;
 	pkg_addrdep;
 	pkg_addscript_file;
@@ -22,7 +21,6 @@ global:
 	pkg_config_dump;
 	pkg_config_files;
 	pkg_config_get;
-	pkg_conflict_uniqueid;
 	pkg_conflicts;
 	pkg_copy_tree;
 	pkg_create_from_manifest;
@@ -89,14 +87,9 @@ global:
 	pkg_object_key;
 	pkg_object_string;
 	pkg_object_type;
-	pkg_old_emit_content;
 	pkg_old_load_from_path;
 	pkg_open;
 	pkg_open_fd;
-	pkg_option_default_value;
-	pkg_option_description;
-	pkg_option_opt;
-	pkg_option_value;
 	pkg_options;
 	pkg_parse_manifest;
 	pkg_parse_manifest_file;
@@ -116,11 +109,9 @@ global:
 	pkg_plugins_init;
 	pkg_plugins_shutdown;
 	pkg_printf;
-	pkg_provide_name;
 	pkg_provides;
 	pkg_rdeps;
 	pkg_recompute;
-	pkg_register_old;
 	pkg_repo_cached_name;
 	pkg_repo_enabled;
 	pkg_repo_find;
@@ -140,7 +131,6 @@ global:
 	pkg_set2;
 	pkg_set_from_file;
 	pkg_set_from_fileat;
-	pkg_shlib_name;
 	pkg_shlibs_provided;
 	pkg_shlibs_required;
 	pkg_shutdown;
@@ -155,7 +145,6 @@ global:
 	pkg_status;
 	pkg_suggest_arch;
 	pkg_test_filesum;
-	pkg_to_old;
 	pkg_try_installed;
 	pkg_type;
 	pkg_update;
@@ -202,6 +191,9 @@ global:
 	pkgdb_set2;
 	pkgdb_set_case_sensitivity;
 	pkgdb_stats;
+	pkgdb_transaction_begin;
+	pkgdb_transaction_commit;
+	pkgdb_transaction_rollback;
 	pkgdb_upgrade_lock;
 	ports_parse_plist;
 local:

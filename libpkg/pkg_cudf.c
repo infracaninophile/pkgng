@@ -130,7 +130,7 @@ cudf_emit_pkg(struct pkg *pkg, int version, FILE *f,
 		if (fprintf(f, "depends: ") < 0)
 			return (EPKG_FATAL);
 		HASH_ITER(hh, pkg->deps, dep, dtmp) {
-			if (cudf_print_element(f, pkg_dep_get(dep, PKG_DEP_ORIGIN),
+			if (cudf_print_element(f, dep->origin,
 					(dep->hh.next != NULL), &column) < 0) {
 				return (EPKG_FATAL);
 			}
@@ -142,7 +142,7 @@ cudf_emit_pkg(struct pkg *pkg, int version, FILE *f,
 		if (fprintf(f, "provides: ") < 0)
 			return (EPKG_FATAL);
 		HASH_ITER(hh, pkg->provides, prov, ptmp) {
-			if (cudf_print_element(f, pkg_provide_name(prov),
+			if (cudf_print_element(f, prov->provide,
 					(prov->hh.next != NULL), &column) < 0) {
 				return (EPKG_FATAL);
 			}
@@ -156,7 +156,7 @@ cudf_emit_pkg(struct pkg *pkg, int version, FILE *f,
 		if (fprintf(f, "conflicts: ") < 0)
 			return (EPKG_FATAL);
 		HASH_ITER(hh, pkg->conflicts, conflict, ctmp) {
-			if (cudf_print_element(f, pkg_conflict_uniqueid(conflict),
+			if (cudf_print_element(f, conflict->uid,
 					(conflict->hh.next != NULL), &column) < 0) {
 				return (EPKG_FATAL);
 			}

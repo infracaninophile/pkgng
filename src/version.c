@@ -455,9 +455,8 @@ do_source_index(unsigned int opt, char limchar, char *pattern, match_t match,
 			continue;
 		
 		HASH_FIND_STR(indexhead, origin, entry);
-		if (entry != NULL)
-			print_version(pkg, "index", entry->version,
-			    limchar, opt);
+		print_version(pkg, "index",
+		    entry != NULL ? entry->version : NULL, limchar, opt);
 	}
 
 cleanup:
@@ -771,6 +770,7 @@ exec_version(int argc, char **argv)
 	const char	*reponame = NULL;
 	const char	*portsdir;
 	const char	*indexfile;
+	const char	*versionsource;
 	char		 filebuf[MAXPATHLEN];
 	match_t		 match = MATCH_ALL;
 	char		*pattern = NULL;
@@ -889,7 +889,9 @@ exec_version(int argc, char **argv)
 	if (opt & (VERSION_STATUS|VERSION_NOSTATUS)) {
 		if (limchar != '<' &&
 		    limchar != '>' &&
-		    limchar != '=') {
+		    limchar != '=' &&
+		    limchar != '?' &&
+		    limchar != '!') {
 			usage_version();
 			return (EX_USAGE);
 		}
@@ -898,6 +900,27 @@ exec_version(int argc, char **argv)
 	if (argc > 1) {
 		usage_version();
 		return (EX_USAGE);
+	}
+
+	if ( !(opt & VERSION_SOURCES ) ) {
+		versionsource = pkg_object_string(
+		    pkg_config_get("VERSION_SOURCE"));
+		if (versionsource != NULL) {
+			switch (versionsource[0]) {
+			case 'I':
+				opt |= VERSION_SOURCE_INDEX;
+				break;
+			case 'P':
+				opt |= VERSION_SOURCE_PORTS;
+				break;
+			case 'R':
+				opt |= VERSION_SOURCE_REMOTE;
+				break;
+			default:
+				warnx("Invalid VERSION_SOURCE"
+				    " in configuration.");
+			}
+		}
 	}
 
 	if ( (opt & VERSION_SOURCE_INDEX) == VERSION_SOURCE_INDEX ) {

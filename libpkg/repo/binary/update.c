@@ -181,11 +181,8 @@ try_again:
 
 	dep = NULL;
 	while (pkg_deps(pkg, &dep) == EPKG_OK) {
-		if (pkg_repo_binary_run_prstatement(DEPS,
-				pkg_dep_origin(dep),
-				pkg_dep_name(dep),
-				pkg_dep_version(dep),
-				package_id) != SQLITE_DONE) {
+		if (pkg_repo_binary_run_prstatement(DEPS, dep->origin,
+		    dep->name, dep->version, package_id) != SQLITE_DONE) {
 			ERROR_SQLITE(sqlite, pkg_repo_binary_sql_prstatement(DEPS));
 			return (EPKG_FATAL);
 		}
@@ -215,10 +212,10 @@ try_again:
 
 	option = NULL;
 	while (pkg_options(pkg, &option) == EPKG_OK) {
-		ret = pkg_repo_binary_run_prstatement(OPT1, pkg_option_opt(option));
+		ret = pkg_repo_binary_run_prstatement(OPT1, option->key);
 		if (ret == SQLITE_DONE)
-		    ret = pkg_repo_binary_run_prstatement(OPT2, pkg_option_opt(option),
-				pkg_option_value(option), package_id);
+		    ret = pkg_repo_binary_run_prstatement(OPT2, option->key,
+				option->value, package_id);
 		if(ret != SQLITE_DONE) {
 			ERROR_SQLITE(sqlite, pkg_repo_binary_sql_prstatement(OPT2));
 			return (EPKG_FATAL);
@@ -227,12 +224,10 @@ try_again:
 
 	shlib = NULL;
 	while (pkg_shlibs_required(pkg, &shlib) == EPKG_OK) {
-		const char *shlib_name = pkg_shlib_name(shlib);
-
-		ret = pkg_repo_binary_run_prstatement(SHLIB1, shlib_name);
+		ret = pkg_repo_binary_run_prstatement(SHLIB1, shlib->name);
 		if (ret == SQLITE_DONE)
 			ret = pkg_repo_binary_run_prstatement(SHLIB_REQD, package_id,
-					shlib_name);
+					shlib->name);
 		if (ret != SQLITE_DONE) {
 			ERROR_SQLITE(sqlite, pkg_repo_binary_sql_prstatement(SHLIB_REQD));
 			return (EPKG_FATAL);
@@ -241,12 +236,10 @@ try_again:
 
 	shlib = NULL;
 	while (pkg_shlibs_provided(pkg, &shlib) == EPKG_OK) {
-		const char *shlib_name = pkg_shlib_name(shlib);
-
-		ret = pkg_repo_binary_run_prstatement(SHLIB1, shlib_name);
+		ret = pkg_repo_binary_run_prstatement(SHLIB1, shlib->name);
 		if (ret == SQLITE_DONE)
 			ret = pkg_repo_binary_run_prstatement(SHLIB_PROV, package_id,
-					shlib_name);
+					shlib->name);
 		if (ret != SQLITE_DONE) {
 			ERROR_SQLITE(sqlite, pkg_repo_binary_sql_prstatement(SHLIB_PROV));
 			return (EPKG_FATAL);
@@ -489,14 +482,11 @@ pkg_repo_binary_update_proceed(const char *name, struct pkg_repo *repo,
 
 	pkg_emit_progress_start("Processing entries");
 
-	/*sql_exec(sqlite, "PRAGMA synchronous = OFF;");
-	sql_exec(sqlite, "PRAGMA journal_mode = DELETE;");
-	sql_exec(sqlite, "PRAGMA temp_store = MEMORY;");*/
 	sql_exec(sqlite, "PRAGMA page_size = %d;", getpagesize());
 	sql_exec(sqlite, "PRAGMA cache_size = 10000;");
 	sql_exec(sqlite, "PRAGMA foreign_keys = OFF;");
 
-	rc = pkgdb_transaction_begin(sqlite, "REPO");
+	rc = pkgdb_transaction_begin_sqlite(sqlite, "REPO");
 	if (rc != EPKG_OK)
 		goto cleanup;
 
@@ -533,20 +523,18 @@ pkg_repo_binary_update_proceed(const char *name, struct pkg_repo *repo,
 	"CREATE INDEX packages_version ON packages(name, version);"
 	"CREATE UNIQUE INDEX packages_digest ON packages(manifestdigest);"
 	 );
-	/* FTS search table */
 
 cleanup:
 
 	if (in_trans) {
 		if (rc != EPKG_OK)
-			pkgdb_transaction_rollback(sqlite, "REPO");
+			pkgdb_transaction_rollback_sqlite(sqlite, "REPO");
 
-		if (pkgdb_transaction_commit(sqlite, "REPO") != EPKG_OK)
+		if (pkgdb_transaction_commit_sqlite(sqlite, "REPO") != EPKG_OK)
 			rc = EPKG_FATAL;
 	}
 
-	if (pkg != NULL)
-		pkg_free(pkg);
+	pkg_free(pkg);
 	if (map != NULL && map != MAP_FAILED)
 		munmap(map, len);
 

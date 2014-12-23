@@ -53,10 +53,6 @@
 #define HASH_ADD_INO(head,ino,add)                                          \
 	HASH_ADD(hh,head,ino,sizeof(ino_t),add)
 
-#ifndef NELEM
-#define	NELEM(array)	(sizeof(array) / sizeof((array)[0]))
-#endif
-
 struct hardlinks {
 	ino_t inode;
 	UT_hash_handle hh;
@@ -100,7 +96,6 @@ void sha256_buf_bin(const char *, size_t len, char[SHA256_DIGEST_LENGTH]);
 int sha256_file(const char *, char[SHA256_DIGEST_LENGTH * 2 +1]);
 int sha256_fileat(int fd, const char *, char[SHA256_DIGEST_LENGTH * 2 +1]);
 int sha256_fd(int fd, char[SHA256_DIGEST_LENGTH * 2 +1]);
-int md5_file(const char *, char[MD5_DIGEST_LENGTH * 2 +1]);
 
 int rsa_new(struct rsa_key **, pem_password_cb *, char *path);
 void rsa_free(struct rsa_key *);

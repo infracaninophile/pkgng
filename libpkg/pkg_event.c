@@ -227,9 +227,9 @@ pipeevent(struct pkg_event *ev)
 		    "\"pkgversion\": \"%v\" ,"
 		    "\"pkgnewversion\": \"%v\""
 		    "}}",
-		    ev->e_upgrade_begin.old,
-		    ev->e_upgrade_begin.old,
-		    ev->e_upgrade_begin.new);
+		    ev->e_upgrade_finished.old,
+		    ev->e_upgrade_finished.old,
+		    ev->e_upgrade_finished.new);
 		break;
 	case PKG_EVENT_LOCKED:
 		pkg_sbuf_printf(msg, "{ \"type\": \"ERROR_LOCKED\", "
@@ -253,8 +253,7 @@ pipeevent(struct pkg_event *ev)
 		while (pkg_rdeps(ev->e_required.pkg, &dep) == EPKG_OK)
 			sbuf_printf(msg, "{ \"pkgname\": \"%s\", "
 			    "\"pkgversion\": \"%s\" }, ",
-			    pkg_dep_name(dep),
-			    pkg_dep_version(dep));
+			    dep->name, dep->version);
 		sbuf_setpos(msg, sbuf_len(msg) - 2);
 		sbuf_cat(msg, "]}}");
 		break;
@@ -273,8 +272,8 @@ pipeevent(struct pkg_event *ev)
 		    "\"depname\": \"%s\", "
 		    "\"depversion\": \"%s\""
 		    "}}" ,
-		    pkg_dep_name(ev->e_missing_dep.dep),
-		    pkg_dep_version(ev->e_missing_dep.dep));
+		    ev->e_missing_dep.dep->name,
+		    ev->e_missing_dep.dep->version);
 		break;
 	case PKG_EVENT_NOREMOTEDB:
 		sbuf_printf(msg, "{ \"type\": \"ERROR_NOREMOTEDB\", "
@@ -938,11 +937,8 @@ pkg_debug(int level, const char *fmt, ...)
 {
 	struct pkg_event ev;
 	va_list ap;
-	int64_t expectlevel;
 
-	expectlevel = pkg_object_int(pkg_config_get("DEBUG_LEVEL"));
-
-	if (expectlevel < level)
+	if (debug_level < level)
 		return;
 
 	ev.type = PKG_EVENT_DEBUG;

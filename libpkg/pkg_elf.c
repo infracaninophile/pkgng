@@ -114,10 +114,12 @@ add_shlibs_to_pkg(__unused void *actdata, struct pkg *pkg, const char *fpath,
 	case EPKG_END:		/* A system library */
 		return (EPKG_OK);
 	default:
-		/* Ignore link resolution errors if we're analysing a
-		   shared library. */
-		if (is_shlib)
+		/* Report link resolution errors in shared library. */
+		if (is_shlib) {
+			pkg_emit_error("(%s-%s) %s - shared library %s not found",
+			      pkg->name, pkg->version, fpath, name);
 			return (EPKG_OK);
+		}
 
 		while (pkg_files(pkg, &file) == EPKG_OK) {
 			filepath = file->path;
@@ -230,10 +232,8 @@ analyse_elf(struct pkg *pkg, const char *fpath,
 	const char *myarch;
 	const char *shlib;
 
-	bool developer = false;
 	bool is_shlib = false;
 
-	developer = pkg_object_bool(pkg_config_get("DEVELOPER_MODE"));
 	myarch = pkg_object_string(pkg_config_get("ABI"));
 
 	int fd;
@@ -261,7 +261,7 @@ analyse_elf(struct pkg *pkg, const char *fpath,
 		goto cleanup;
 	}
 
-	if (developer)
+	if (developer_mode)
 		pkg->flags |= PKG_CONTAINS_ELF_OBJECTS;
 
 	if (gelf_getehdr(e, &elfhdr) == NULL) {
@@ -446,9 +446,7 @@ pkg_analyse_files(struct pkgdb *db, struct pkg *pkg, const char *stage)
 	struct pkg_shlib *sh, *shtmp, *found;
 	int ret = EPKG_OK;
 	char fpath[MAXPATHLEN];
-	bool developer = false, failures = false;
-
-	developer = pkg_object_bool(pkg_config_get("DEVELOPER_MODE"));
+	bool failures = false;
 
 	pkg_list_free(pkg, PKG_SHLIBS_REQUIRED);
 	pkg_list_free(pkg, PKG_SHLIBS_PROVIDED);
@@ -463,7 +461,7 @@ pkg_analyse_files(struct pkgdb *db, struct pkg *pkg, const char *stage)
 		goto cleanup;
 
 	/* Assume no architecture dependence, for contradiction */
-	if (developer)
+	if (developer_mode)
 		pkg->flags &= ~(PKG_CONTAINS_ELF_OBJECTS |
 				PKG_CONTAINS_STATIC_LIBS |
 				PKG_CONTAINS_H_OR_LA);
@@ -475,7 +473,7 @@ pkg_analyse_files(struct pkgdb *db, struct pkg *pkg, const char *stage)
 			strlcpy(fpath, file->path, sizeof(fpath));
 
 		ret = analyse_elf(pkg, fpath, add_shlibs_to_pkg, db);
-		if (developer) {
+		if (developer_mode) {
 			if (ret != EPKG_OK && ret != EPKG_END) {
 				failures = true;
 				continue;
@@ -488,11 +486,11 @@ pkg_analyse_files(struct pkgdb *db, struct pkg *pkg, const char *stage)
 	 * Do not depend on libraries that a package provides itself
 	 */
 	HASH_ITER(hh, pkg->shlibs_required, sh, shtmp) {
-		HASH_FIND_STR(pkg->shlibs_provided, pkg_shlib_name(sh), found);
+		HASH_FIND_STR(pkg->shlibs_provided, sh->name, found);
 		if (found != NULL) {
 			pkg_debug(2, "remove %s from required shlibs as the "
 			    "package %s provides this library itself",
-			    pkg_shlib_name(sh), pkg->name);
+			    sh->name, pkg->name);
 			HASH_DEL(pkg->shlibs_required, sh);
 		}
 	}
@@ -738,7 +736,7 @@ pkg_get_myarch_elfparse(char *dest, size_t sz)
 		src += sizeof(Elf_Note);
 		if (note.n_type == NT_VERSION)
 			break;
-		src += note.n_namesz + note.n_descsz;
+		src += roundup2(note.n_namesz + note.n_descsz, 4);
 	}
 	if ((uintptr_t)src >= ((uintptr_t)data->d_buf + data->d_size)) {
 		ret = EPKG_FATAL;
@@ -940,6 +938,7 @@ pkg_get_myarch_legacy(char *dest, size_t sz)
 	return (0);
 }
 
+#ifndef __DragonFly__
 int
 pkg_get_myarch(char *dest, size_t sz)
 {
@@ -971,6 +970,7 @@ pkg_get_myarch(char *dest, size_t sz)
 
 	return (0);
 }
+#endif
 
 int
 pkg_suggest_arch(struct pkg *pkg, const char *arch, bool isdefault)

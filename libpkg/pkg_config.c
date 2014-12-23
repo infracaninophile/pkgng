@@ -51,7 +51,7 @@
 #define PORTSDIR "/usr/ports"
 #endif
 #ifndef DEFAULT_VULNXML_URL
-#define DEFAULT_VULNXML_URL "http://www.vuxml.org/freebsd/vuln.xml.bz2"
+#define DEFAULT_VULNXML_URL "http://vuxml.freebsd.org/freebsd/vuln.xml.bz2"
 #endif
 
 #ifdef	OSMAJOR
@@ -63,6 +63,8 @@
 #endif
 
 int eventpipe = -1;
+int64_t debug_level = 0;
+bool developer_mode = false;
 
 struct config_entry {
 	uint8_t type;
@@ -333,7 +335,19 @@ static struct config_entry c[] = {
 		"AUTOMERGE",
 		"YES",
 		"Automatically merge configuration files"
-	}
+	},
+	{
+		PKG_STRING,
+		"VERSION_SOURCE",
+		NULL,
+		"Version source for pkg-version (I, P, R), default is auto detect"
+	},
+	{
+		PKG_BOOL,
+		"CONSERVATIVE_UPGRADE",
+		"NO",
+		"Prefer repos with higher priority during upgrade"
+	},
 };
 
 static bool parsed = false;
@@ -437,6 +451,7 @@ add_repo(const ucl_object_t *obj, struct pkg_repo *r, const char *rname, pkg_ini
 	const char *key;
 	const char *type = NULL;
 	int use_ipvx = 0;
+	int priority = 0;
 
 	pkg_debug(1, "PkgConfig: parsing repository object %s", rname);
 
@@ -524,6 +539,14 @@ add_repo(const ucl_object_t *obj, struct pkg_repo *r, const char *rname, pkg_ini
 			use_ipvx = ucl_object_toint(cur);
 			if (use_ipvx != 4 && use_ipvx != 6)
 				use_ipvx = 0;
+		} else if (strcasecmp(key, "priority") == 0) {
+			if (cur->type != UCL_INT) {
+				pkg_emit_error("Expecting a integer for the "
+					"'%s' key of the '%s' repo",
+					key, rname);
+				return;
+			}
+			priority = ucl_object_toint(cur);
 		}
 	}
 
@@ -558,6 +581,7 @@ add_repo(const ucl_object_t *obj, struct pkg_repo *r, const char *rname, pkg_ini
 	}
 
 	r->enable = enable;
+	r->priority = priority;
 
 	if (mirror_type != NULL) {
 		if (strcasecmp(mirror_type, "srv") == 0)
@@ -638,32 +662,39 @@ load_repo_file(const char *repofile, pkg_init_flags flags)
 	ucl_object_unref(obj);
 }
 
+static int
+nodots(const struct dirent *dp)
+{
+	return (dp->d_name[0] != '.');
+}
+
 static void
 load_repo_files(const char *repodir, pkg_init_flags flags)
 {
-	struct dirent *ent;
-	DIR *d;
+	struct dirent **ent;
 	char *p;
 	size_t n;
+	int nents, i;
 	char path[MAXPATHLEN];
 
-	if ((d = opendir(repodir)) == NULL)
-		return;
-
 	pkg_debug(1, "PkgConfig: loading repositories in %s", repodir);
-	while ((ent = readdir(d))) {
-		if ((n = strlen(ent->d_name)) <= 5)
+
+	nents = scandir(repodir, &ent, nodots, alphasort);
+	for (i = 0; i < nents; i++) {
+		if ((n = strlen(ent[i]->d_name)) <= 5)
 			continue;
-		p = &ent->d_name[n - 5];
+		p = &ent[i]->d_name[n - 5];
 		if (strcmp(p, ".conf") == 0) {
 			snprintf(path, sizeof(path), "%s%s%s",
 			    repodir,
 			    repodir[strlen(repodir) - 1] == '/' ? "" : "/",
-			    ent->d_name);
+			    ent[i]->d_name);
 			load_repo_file(path, flags);
 		}
+		free(ent[i]);
 	}
-	closedir(d);
+	if (nents >= 0)
+		free(ent);
 }
 
 static void
@@ -975,12 +1006,20 @@ pkg_ini(const char *path, const char *reposdir, pkg_init_flags flags)
 	ucl_object_unref(obj);
 	ucl_parser_free(p);
 
+	if (strcmp(pkg_object_string(pkg_config_get("ABI")), "unknown") == 0) {
+		pkg_emit_error("Unable to determine ABI");
+		return (EPKG_FATAL);
+	}
+
 	pkg_debug(1, "%s", "pkg initialized");
 
 	/* Start the event pipe */
 	evpipe = pkg_object_string(pkg_config_get("EVENT_PIPE"));
 	if (evpipe != NULL)
 		connect_evpipe(evpipe);
+
+	debug_level = pkg_object_int(pkg_config_get("DEBUG_LEVEL"));
+	developer_mode = pkg_object_bool(pkg_config_get("DEVELOPER_MODE"));
 
 	it = NULL;
 	object = ucl_object_find_key(config, "PKG_ENV");

@@ -59,7 +59,7 @@ pkg_delete(struct pkg *pkg, struct pkgdb *db, unsigned flags)
 		pkg_emit_deinstall_begin(pkg);
 
 	/* If the package is locked */
-	if (pkg_is_locked(pkg)) {
+	if (pkg->locked) {
 		pkg_emit_locked(pkg);
 		return (EPKG_LOCKED);
 	}
@@ -94,7 +94,7 @@ pkg_delete(struct pkg *pkg, struct pkgdb *db, unsigned flags)
 			return (ret);
 	}
 
-	ret = pkg_delete_dirs(db, pkg);
+	ret = pkg_delete_dirs(db, pkg, NULL);
 	if (ret != EPKG_OK)
 		return (ret);
 
@@ -158,8 +158,13 @@ rmdir_p(struct pkgdb *db, struct pkg *pkg, char *dir, const char *prefix_r)
 	char *tmp;
 	int64_t cnt;
 	char fullpath[MAXPATHLEN];
+	size_t len;
 
-	snprintf(fullpath, sizeof(fullpath), "/%s", dir);
+	len = snprintf(fullpath, sizeof(fullpath), "/%s", dir);
+	while (fullpath[len -1] == '/') {
+		fullpath[len - 1] = '\0';
+		len--;
+	}
 	if (pkgdb_is_dir_used(db, pkg, fullpath, &cnt) != EPKG_OK)
 		return;
 
@@ -173,13 +178,16 @@ rmdir_p(struct pkgdb *db, struct pkg *pkg, char *dir, const char *prefix_r)
 	if (cnt > 0)
 		return;
 
-	if (strcmp(prefix_r, dir) == 0)
+	if (strcmp(prefix_r, fullpath + 1) == 0)
 		return;
 
-	pkg_debug(1, "removing directory %s", dir);
-	if (unlinkat(pkg->rootfd, dir, AT_REMOVEDIR) == -1 &&
-	    errno != ENOTEMPTY && errno != EBUSY) {
-		pkg_emit_errno("unlinkat", dir);
+	pkg_debug(1, "removing directory %s", fullpath);
+	if (unlinkat(pkg->rootfd, dir, AT_REMOVEDIR) == -1) {
+		if (errno != ENOTEMPTY && errno != EBUSY)
+			pkg_emit_errno("unlinkat", dir);
+		/* If the directory was already removed by a bogus script, continue removing parents */
+		if (errno != ENOENT)
+			return;
 	}
 
 	/* No recursivity for packages out of the prefix */
@@ -207,7 +215,7 @@ pkg_effective_rmdir(struct pkgdb *db, struct pkg *pkg)
 	char prefix_r[MAXPATHLEN];
 	size_t i;
 
-	snprintf(prefix_r, sizeof(prefix_r), "%s/", pkg->prefix + 1);
+	snprintf(prefix_r, sizeof(prefix_r), "%s", pkg->prefix + 1);
 	for (i = 0; i < pkg->dir_to_del_len; i++)
 		rmdir_p(db, pkg, pkg->dir_to_del[i], prefix_r);
 }
@@ -328,12 +336,18 @@ pkg_delete_dir(struct pkg *pkg, struct pkg_dir *dir)
 }
 
 int
-pkg_delete_dirs(__unused struct pkgdb *db, struct pkg *pkg)
+pkg_delete_dirs(__unused struct pkgdb *db, struct pkg *pkg, struct pkg *new)
 {
-	struct pkg_dir		*dir = NULL;
+	struct pkg_dir	*dir = NULL;
+	struct pkg_dir	*d;
 
-	while (pkg_dirs(pkg, &dir) == EPKG_OK)
-		pkg_delete_dir(pkg, dir);
+	while (pkg_dirs(pkg, &dir) == EPKG_OK) {
+		d = NULL;
+		if (new != NULL)
+			HASH_FIND_STR(new->dirs, dir->path, d);
+		if (d == NULL)
+			pkg_delete_dir(pkg, dir);
+	}
 
 	pkg_effective_rmdir(db, pkg);
 

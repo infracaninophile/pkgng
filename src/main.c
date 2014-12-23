@@ -116,7 +116,7 @@ static struct commands {
 	{ "which", "Displays which package installed a specific file", exec_which, usage_which},
 };
 
-static const unsigned int cmd_len = sizeof(cmd) / sizeof(cmd[0]);
+static const unsigned int cmd_len = NELEM(cmd);
 
 static STAILQ_HEAD(, plugcmd) plugins = STAILQ_HEAD_INITIALIZER(plugins);
 struct plugcmd {
@@ -164,9 +164,9 @@ usage(const char *conffile, const char *reposdir, FILE *out, enum pkg_usage_reas
 	}
 
 #ifdef HAVE_LIBJAIL
- 	fprintf(out, "Usage: pkg [-v] [-d] [-l] [-N] [-j <jail name or id>|-c <chroot path>] [-C <configuration file>] [-R <repo config dir>] [-o var=value] [-4|-6] <command> [<args>]\n\n");
+ 	fprintf(out, "Usage: pkg [-v] [-d] [-l] [-N] [-j <jail name or id>|-c <chroot path>] [-C <configuration file>] [-R <repo config dir>] [-o var=value] [-4|-6] <command> [<args>]\n");
 #else
-	fprintf(out, "Usage: pkg [-v] [-d] [-l] [-N] [-c <chroot path>] [-C <configuration file>] [-R <repo config dir>] [-o var=value] [-4|-6] <command> [<args>]\n\n");
+	fprintf(out, "Usage: pkg [-v] [-d] [-l] [-N] [-c <chroot path>] [-C <configuration file>] [-R <repo config dir>] [-o var=value] [-4|-6] <command> [<args>]\n");
 #endif
 	if (reason == PKG_USAGE_HELP) {
 		fprintf(out, "Global options supported:\n");
@@ -652,6 +652,8 @@ main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
+	debug_level = debug;
+
 	if (version == 1)
 		show_version_info(version);
 
@@ -704,6 +706,9 @@ main(int argc, char **argv)
 
 	if (pkg_ini(conffile, reposdir, init_flags) != EPKG_OK)
 		errx(EX_SOFTWARE, "Cannot parse configuration file!");
+
+	if (debug > 0)
+		debug_level = debug;
 
 	if (atexit(&pkg_shutdown) != 0)
 		errx(EX_SOFTWARE, "register pkg_shutdown() to run at exit");

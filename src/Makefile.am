@@ -42,6 +42,7 @@ pkg_LDADD=	$(top_builddir)/libpkg/libpkg.la \
 			-lutil \
 			-lcrypto
 pkg_CFLAGS=		-I$(top_srcdir)/libpkg \
+			-I$(top_builddir)/libpkg \
 			-I$(top_srcdir)/external/uthash \
 			-I$(top_srcdir)/external/expat/lib \
 			-DGITHASH=\"$(GIT_HEAD)\" \
@@ -52,7 +53,6 @@ pkg_static_LDADD= $(top_builddir)/libpkg/libpkg_static.la \
 			$(pkg_OBJECTS) \
 			@LIBJAIL_LIB@ \
 			@LIBEXECINFO_LIB@ \
-			@LIBELF_LIB@ \
 			@LDNS_LIBS@ \
 			-lfetch \
 			-larchive \
@@ -64,7 +64,17 @@ pkg_static_LDADD= $(top_builddir)/libpkg/libpkg_static.la \
 			-lcrypto \
 			-lmd \
 			-lm
+if LIBELF_BUNDLED
+pkg_static_LDADD+=	$(top_builddir)/external/libelf_static.la
+else
+pkg_static_LDADD+=	-lelf
+endif
+
 pkg_static_LDFLAGS=	-all-static
-sbin_PROGRAMS=		pkg pkg-static
+DYNPROG=		pkg
+sbin_PROGRAMS=		pkg-static
+if DYNAMIC
+sbin_PROGRAMS+=		$(DYNPROG)
+endif
 
 dist_sysconf_DATA=	pkg.conf.sample

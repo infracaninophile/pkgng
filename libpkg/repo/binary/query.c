@@ -365,7 +365,8 @@ pkg_repo_binary_ensure_loaded(struct pkg_repo *repo,
 	struct pkg *cached = NULL;
 	char path[MAXPATHLEN];
 
-	if ((flags & (PKG_LOAD_FILES|PKG_LOAD_DIRS)) != 0 &&
+	if (pkg->type != PKG_INSTALLED &&
+			(flags & (PKG_LOAD_FILES|PKG_LOAD_DIRS)) != 0 &&
 			(pkg->flags & (PKG_LOAD_FILES|PKG_LOAD_DIRS)) == 0) {
 		/*
 		 * Try to get that information from fetched package in cache
@@ -373,6 +374,7 @@ pkg_repo_binary_ensure_loaded(struct pkg_repo *repo,
 		pkg_manifest_keys_new(&keys);
 		pkg_repo_cached_name(pkg, path, sizeof(path));
 
+		pkg_debug(1, "Binary> loading %s", path);
 		if (pkg_open(&cached, path, keys, PKG_OPEN_TRY) != EPKG_OK)
 			return (EPKG_FATAL);
 

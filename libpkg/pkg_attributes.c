@@ -50,9 +50,9 @@ pkg_dep_free(struct pkg_dep *d)
 	if (d == NULL)
 		return;
 
-	sbuf_free(d->origin);
-	sbuf_free(d->name);
-	sbuf_free(d->version);
+	free(d->origin);
+	free(d->name);
+	free(d->version);
 	free(d->uid);
 	free(d);
 }
@@ -64,13 +64,13 @@ pkg_dep_get(struct pkg_dep const * const d, const pkg_dep_attr attr)
 
 	switch (attr) {
 	case PKG_DEP_NAME:
-		return (sbuf_get(d->name));
+		return (d->name);
 		break;
 	case PKG_DEP_ORIGIN:
-		return (sbuf_get(d->origin));
+		return (d->origin);
 		break;
 	case PKG_DEP_VERSION:
-		return (sbuf_get(d->version));
+		return (d->version);
 		break;
 	default:
 		return (NULL);
@@ -203,43 +203,11 @@ pkg_option_free(struct pkg_option *option)
 	if (option == NULL)
 		return;
 
-	sbuf_free(option->key);
-	sbuf_free(option->value);
-	sbuf_free(option->default_value);
-	sbuf_free(option->description);
+	free(option->key);
+	free(option->value);
+	free(option->default_value);
+	free(option->description);
 	free(option);
-}
-
-const char *
-pkg_option_opt(struct pkg_option const * const option)
-{
-	assert(option != NULL);
-
-	return (sbuf_get(option->key));
-}
-
-const char *
-pkg_option_value(struct pkg_option const * const option)
-{
-	assert(option != NULL);
-
-	return (sbuf_get(option->value));
-}
-
-const char *
-pkg_option_default_value(struct pkg_option const * const option)
-{
-	assert(option != NULL);
-
-	return (sbuf_get(option->default_value));
-}
-
-const char *
-pkg_option_description(struct pkg_option const * const option)
-{
-	assert(option != NULL);
-
-	return (sbuf_get(option->description));
 }
 
 /*
@@ -260,16 +228,8 @@ pkg_shlib_free(struct pkg_shlib *sl)
 	if (sl == NULL)
 		return;
 
-	sbuf_free(sl->name);
+	free(sl->name);
 	free(sl);
-}
-
-const char *
-pkg_shlib_name(struct pkg_shlib const * const sl)
-{
-	assert(sl != NULL);
-
-	return (sbuf_get(sl->name));
 }
 
 /*
@@ -291,16 +251,8 @@ pkg_conflict_free(struct pkg_conflict *c)
 	if (c == NULL)
 		return;
 
-	sbuf_free(c->uniqueid);
+	free(c->uid);
 	free(c);
-}
-
-const char *
-pkg_conflict_uniqueid(const struct pkg_conflict *c)
-{
-	assert(c != NULL);
-
-	return (sbuf_get(c->uniqueid));
 }
 
 /*
@@ -321,16 +273,8 @@ pkg_provide_free(struct pkg_provide *c)
 	if (c == NULL)
 		return;
 
-	sbuf_free(c->provide);
+	free(c->provide);
 	free(c);
-}
-
-const char *
-pkg_provide_name(const struct pkg_provide *c)
-{
-	assert(c != NULL);
-
-	return (sbuf_get(c->provide));
 }
 
 /*

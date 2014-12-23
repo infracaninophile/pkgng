@@ -142,9 +142,10 @@ do_extract(struct archive *a, struct archive_entry *ae, const char *location,
 	int	ret = 0, cur_file = 0;
 	char	path[MAXPATHLEN], pathname[MAXPATHLEN], rpath[MAXPATHLEN];
 	struct stat st;
+	const struct stat *aest;
 	bool renamed = false;
-	const struct pkg_file *lf, *rf;
-	struct pkg_config_file *lcf, *rcf;
+	const struct pkg_file *rf;
+	struct pkg_config_file *rcf;
 	struct sbuf *newconf;
 	bool automerge = pkg_object_bool(pkg_config_get("AUTOMERGE"));
 
@@ -163,9 +164,7 @@ do_extract(struct archive *a, struct archive_entry *ae, const char *location,
 	do {
 		ret = ARCHIVE_OK;
 		sbuf_clear(newconf);
-		lf = NULL;
 		rf = NULL;
-		lcf = NULL;
 		rcf = NULL;
 		pkg_absolutepath(archive_entry_pathname(ae), path, sizeof(path));
 		snprintf(pathname, sizeof(pathname), "%s/%s",
@@ -174,10 +173,10 @@ do_extract(struct archive *a, struct archive_entry *ae, const char *location,
 		);
 		strlcpy(rpath, pathname, sizeof(rpath));
 
-		if (lstat(rpath, &st) != -1 && !S_ISDIR(st.st_mode)) {
+		if (lstat(rpath, &st) != -1) {
 			/* check is the old version is the same as the new version */
 			if (S_ISREG(st.st_mode) && st.st_size == archive_entry_size(ae)) {
-				char localsum[SHA256_DIGEST_LENGTH + 2 + 1];
+				char localsum[SHA256_DIGEST_LENGTH * 2 + 1];
 				if (sha256_file(rpath, localsum) == EPKG_OK) {
 					HASH_FIND_STR(pkg->files, path, rf);
 					if (strcmp(localsum, rf->sum) == 0) {
@@ -190,9 +189,24 @@ do_extract(struct archive *a, struct archive_entry *ae, const char *location,
 			/*
 			 * We have an existing file on the path, so handle it
 			 */
-			pkg_debug(2, "Old version found, renaming");
-			pkg_add_file_random_suffix(rpath, sizeof(rpath), 12);
-			renamed = true;
+			aest = archive_entry_stat(ae);
+			if (!S_ISDIR(aest->st_mode)) {
+				pkg_debug(2, "Old version found, renaming");
+				pkg_add_file_random_suffix(rpath, sizeof(rpath), 12);
+				renamed = true;
+			}
+
+			if (!S_ISDIR(st.st_mode) && S_ISDIR(aest->st_mode)) {
+				if (S_ISLNK(st.st_mode)) {
+					if (stat(rpath, &st) == -1) {
+						pkg_emit_error("Dead symlink %s", rpath);
+					} else {
+						pkg_debug(2, "Directory is a symlink, use it");
+						pkg_emit_progress_tick(cur_file++, nfiles);
+						continue;
+					}
+				}
+			}
 		}
 
 		archive_entry_set_pathname(ae, rpath);
@@ -310,11 +324,11 @@ pkg_add_check_pkg_archive(struct pkgdb *db, struct pkg *pkg,
 			pkg_inst = NULL;
 			return (EPKG_INSTALLED);
 		}
-		else if (pkg_is_locked(pkg_inst)) {
+		else if (pkg_inst->locked) {
 			pkg_emit_locked(pkg_inst);
 			pkg_free(pkg_inst);
 			pkg_inst = NULL;
-			return (EPKG_INSTALLED);
+			return (EPKG_LOCKED);
 		}
 		else {
 			pkg_emit_notice("package %s is already installed, forced install",
@@ -348,15 +362,12 @@ pkg_add_check_pkg_archive(struct pkgdb *db, struct pkg *pkg,
 	pkg_emit_add_deps_begin(pkg);
 
 	while (pkg_deps(pkg, &dep) == EPKG_OK) {
-		if (pkg_is_installed(db, pkg_dep_origin(dep)) == EPKG_OK)
+		if (pkg_is_installed(db, dep->name) == EPKG_OK)
 			continue;
 
 		if (basedir != NULL) {
-			const char *dep_name = pkg_dep_name(dep);
-			const char *dep_ver = pkg_dep_version(dep);
-
 			snprintf(dpath, sizeof(dpath), "%s/%s-%s%s", basedir,
-				dep_name, dep_ver, ext);
+				dep->name, dep->version, ext);
 
 			if ((flags & PKG_ADD_UPGRADE) == 0 &&
 							access(dpath, F_OK) == 0) {
@@ -367,8 +378,7 @@ pkg_add_check_pkg_archive(struct pkgdb *db, struct pkg *pkg,
 			} else {
 				pkg_emit_error("Missing dependency matching "
 					"Origin: '%s' Version: '%s'",
-					pkg_dep_get(dep, PKG_DEP_ORIGIN),
-					pkg_dep_get(dep, PKG_DEP_VERSION));
+					dep->origin, dep->version);
 				if ((flags & PKG_ADD_FORCE_MISSING) == 0)
 					goto cleanup;
 			}
@@ -386,10 +396,9 @@ cleanup:
 }
 
 static int
-pkg_add_cleanup_old(struct pkg *old, struct pkg *new, int flags)
+pkg_add_cleanup_old(struct pkgdb *db, struct pkg *old, struct pkg *new, int flags)
 {
 	struct pkg_file *f;
-	struct pkg_dir *d, *cd;
 	int ret = EPKG_OK;
 	bool handle_rc;
 
@@ -419,13 +428,7 @@ pkg_add_cleanup_old(struct pkg *old, struct pkg *new, int flags)
 			}
 		}
 
-		d = NULL;
-		while (pkg_dirs(old, &d) == EPKG_OK) {
-			HASH_FIND_STR(new->dirs, d->path, cd);
-
-			if (cd == NULL)
-				pkg_delete_dir(old, d);
-		}
+		pkg_delete_dirs(db, old, new);
 	}
 
 	return (ret);
@@ -464,6 +467,12 @@ pkg_add_common(struct pkgdb *db, const char *path, unsigned flags,
 	}
 	if ((flags & PKG_ADD_UPGRADE) == 0)
 		pkg_emit_install_begin(pkg);
+	else {
+		if (local != NULL)
+			pkg_emit_upgrade_begin(pkg, local);
+		else
+			pkg_emit_install_begin(pkg);
+	}
 
 	if (pkg_is_valid(pkg) != EPKG_OK) {
 		pkg_emit_error("the package is not valid");
@@ -479,7 +488,8 @@ pkg_add_common(struct pkgdb *db, const char *path, unsigned flags,
 	if (remote == NULL) {
 		ret = pkg_add_check_pkg_archive(db, pkg, path, flags, keys, location);
 		if (ret != EPKG_OK) {
-			retcode = ret;
+			/* Do not return error on installed package */
+			retcode = (ret == EPKG_INSTALLED ? EPKG_OK : ret);
 			goto cleanup;
 		}
 	}
@@ -511,7 +521,7 @@ pkg_add_common(struct pkgdb *db, const char *path, unsigned flags,
 
 	if (local != NULL) {
 		pkg_debug(1, "Cleaning up old version");
-		if (pkg_add_cleanup_old(local, pkg, flags) != EPKG_OK) {
+		if (pkg_add_cleanup_old(db, local, pkg, flags) != EPKG_OK) {
 			retcode = EPKG_FATAL;
 			goto cleanup;
 		}
@@ -534,7 +544,7 @@ pkg_add_common(struct pkgdb *db, const char *path, unsigned flags,
 	    != EPKG_OK) {
 		/* If the add failed, clean up (silently) */
 		pkg_delete_files(pkg, 2);
-		pkg_delete_dirs(db, pkg);
+		pkg_delete_dirs(db, pkg, NULL);
 		goto cleanup_reg;
 	}
 
@@ -564,8 +574,16 @@ pkg_add_common(struct pkgdb *db, const char *path, unsigned flags,
 	if ((flags & PKG_ADD_UPGRADE) == 0)
 		pkgdb_register_finale(db, retcode);
 
-	if (retcode == EPKG_OK && (flags & PKG_ADD_UPGRADE) == 0)
-		pkg_emit_install_finished(pkg);
+	if (retcode == EPKG_OK) {
+		if ((flags & PKG_ADD_UPGRADE) == 0)
+			pkg_emit_install_finished(pkg);
+		else {
+			if (local != NULL)
+				pkg_emit_upgrade_finished(pkg, local);
+			else
+				pkg_emit_install_finished(pkg);
+		}
+	}
 
 	cleanup:
 	if (a != NULL) {

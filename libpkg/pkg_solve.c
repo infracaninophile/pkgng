@@ -279,12 +279,8 @@ static void
 pkg_debug_print_rule(struct pkg_solve_rule *rule)
 {
 	struct sbuf *sb;
-	int64_t expectlevel;
 
-	/* Avoid expensive printing if debug level is less than required */
-	expectlevel = pkg_object_int(pkg_config_get("DEBUG_LEVEL"));
-
-	if (expectlevel < 3)
+	if (debug_level < 3)
 		return;
 
 	sb = sbuf_new_auto();
@@ -383,7 +379,7 @@ pkg_solve_add_conflict_rule(struct pkg_solve_problem *problem,
 	struct pkg_solve_rule *rule = NULL;
 	struct pkg_solve_item *it = NULL;
 
-	uid = pkg_conflict_uniqueid(conflict);
+	uid = conflict->uid;
 	HASH_FIND_STR(problem->variables_by_uid, uid, confvar);
 	if (confvar == NULL) {
 		pkg_debug(2, "cannot find conflict %s", uid);
@@ -447,7 +443,7 @@ pkg_solve_add_require_rule(struct pkg_solve_problem *problem,
 	struct pkg_job_provide *pr, *prhead;
 	int cnt;
 
-	HASH_FIND_STR(problem->j->universe->provides, pkg_shlib_name(shlib), prhead);
+	HASH_FIND_STR(problem->j->universe->provides, shlib->name, prhead);
 	if (prhead != NULL) {
 		/* Require rule !A | P1 | P2 | P3 ... */
 		rule = pkg_solve_rule_new(PKG_RULE_REQUIRE);
@@ -484,7 +480,7 @@ pkg_solve_add_require_rule(struct pkg_solve_problem *problem,
 		 * are really fixed.
 		 */
 		pkg_debug(1, "solver: cannot find provide for required shlib %s",
-			pkg_shlib_name(shlib));
+			shlib->name);
 	}
 
 	return (EPKG_OK);

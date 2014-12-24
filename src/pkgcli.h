@@ -73,8 +73,11 @@ void usage_create(void);
 void usage_delete(void);
 int exec_delete(int, char **);
 
-/* pkg info */
+/* pkg diff */
+void usage_diff(void);
+int exec_diff(int, char **);
 
+/* pkg info */
 int exec_info(int, char **);
 void usage_info(void);
 

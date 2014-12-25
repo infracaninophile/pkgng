@@ -24,6 +24,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <err.h>
 #include <getopt.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -33,6 +34,20 @@
 
 #include "pkgcli.h"
 
+static bool	verbose = false;
+
+int
+do_diff_matched_packages(struct pkgdb *db, match_t match,
+			 const char *reponame, int argc, char **argv)
+{
+	/*
+	struct pkgdb_it	*it = NULL;
+	struct pkg	*pkg = NULL;
+	*/
+
+	
+	return (EPKG_OK);
+}
 
 void
 usage_diff(void)
@@ -45,9 +60,11 @@ usage_diff(void)
 int
 exec_diff(int argc, char **argv)
 {
-	bool	verbose = false;
-	int	ch;
-	match_t match = MATCH_EXACT;
+	struct pkgdb	*db = NULL;
+	const char	*reponame = NULL;
+	int		 ch;
+	int		 ret;
+	match_t 	 match = MATCH_EXACT;
 
 	struct option longopts[] = {
 		{ "all",	      no_argument,       NULL, 'a' },
@@ -80,6 +97,7 @@ exec_diff(int argc, char **argv)
 			quiet = true;
 			break;
 		case 'r':
+			reponame = optarg;
 			break;
 		case 'v':
 			verbose = true;
@@ -95,6 +113,45 @@ exec_diff(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
+	if (argc == 0 && match != MATCH_ALL) {
+		usage_diff();
+		return (EX_USAGE);
+	}
+
+	ret = pkgdb_access(PKGDB_MODE_READ, PKGDB_DB_LOCAL|PKGDB_DB_REPO);
+	if (ret == EPKG_ENODB) {
+		if (!quiet)
+			warnx("No packages installed.  Nothing to do!");
+		return (EX_OK);
+	} else if (ret == EPKG_ENOACCESS) {
+		if (!quiet)
+			warnx("Insufficient privilege to access the package database");
+		return (EX_NOPERM);
+	} else if (ret != EPKG_OK) {
+		if (!quiet)
+			warnx("Error accessing the package database");
+		return (EX_SOFTWARE);
+	}
+
+	ret = pkgdb_open(&db, PKGDB_DEFAULT);
+	if (ret != EPKG_OK) {
+		if (!quiet)
+			warnx("Error opening the package database");
+		return (EX_IOERR);
+	}
+
+	ret = pkgdb_obtain_lock(db, PKGDB_LOCK_ADVISORY);
+	if (ret != EPKG_OK) {
+		pkgdb_close(db);
+		if (!quiet)
+			warnx("Database busy: cannot get advisory lock");
+		return (EX_TEMPFAIL);
+	}
+
+	ret = do_diff_matched_packages(db, match, reponame, argc, argv);
+
+	pkgdb_release_lock(db, PKGDB_LOCK_ADVISORY);
+	pkgdb_close(db);
 	
-	return (EX_OK);
+	return ((ret == EPKG_OK) ? EX_OK : EX_SOFTWARE);
 }

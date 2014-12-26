@@ -37,16 +37,45 @@
 static bool	verbose = false;
 
 int
+do_diff_package(struct pkgdb *db, struct pkg *pkg, const char *repname)
+{
+	return (EPKG_OK);
+}
+
+int
 do_diff_matched_packages(struct pkgdb *db, match_t match,
 			 const char *reponame, int argc, char **argv)
 {
-	/*
 	struct pkgdb_it	*it = NULL;
 	struct pkg	*pkg = NULL;
-	*/
-
+	int		 ret;
+	int		 i;
 	
-	return (EPKG_OK);
+	if (match == MATCH_ALL)
+		argc = 1;	/* At least once through the loop */
+
+	for (i = 0; i < argc; i++) {
+		it = pkgdb_query(db, argv[i], match);
+		if (it == NULL) {
+			pkg_free(pkg);
+			return (EX_IOERR);
+		}
+		
+		while(pkgdb_it_next(it, &pkg, PKG_LOAD_FILES) == EPKG_OK) {
+			ret = do_diff_package(db, pkg, reponame);
+			if (ret != EPKG_OK)
+				break;
+		}
+
+		pkgdb_it_free(it);
+
+		if (ret != EPKG_OK)
+			break;
+	}
+
+	pkg_free(pkg);
+	
+	return (ret);
 }
 
 void

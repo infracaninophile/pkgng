@@ -81,7 +81,7 @@ do_diff_matched_packages(struct pkgdb *db, match_t match,
 void
 usage_diff(void)
 {
-	fprintf(stderr, "Usage: pkg diff [-qv] [-r repo] -a | "
+	fprintf(stderr, "Usage: pkg diff [-qvU] [-r repo] -a | "
 	    "-Cgix <pattern>\n\n");
 	fprintf(stderr, "For more information see 'pkg help diff'.\n");
 }
@@ -94,7 +94,8 @@ exec_diff(int argc, char **argv)
 	int		 ch;
 	int		 ret;
 	match_t 	 match = MATCH_EXACT;
-
+	unsigned	 mode;
+	
 	struct option longopts[] = {
 		{ "all",	      no_argument,       NULL, 'a' },
 		{ "case-sensitive",   no_argument,       NULL, 'C' },
@@ -102,6 +103,7 @@ exec_diff(int argc, char **argv)
 		{ "case-insensitive", no_argument,       NULL, 'i' },
 		{ "guiet",	      no_argument,       NULL, 'q' },
 		{ "repository",	      required_argument, NULL, 'r' },
+		{ "no-repo-update",   no_argument,       NULL, 'U' },
 		{ "verbose",	      no_argument,       NULL, 'v' },
 		{ "regex",	      no_argument,       NULL, 'x' },
 		{ NULL,		      0,		 NULL, 0   },
@@ -128,6 +130,9 @@ exec_diff(int argc, char **argv)
 		case 'r':
 			reponame = optarg;
 			break;
+		case 'U':
+			auto_update = false;
+			break;
 		case 'v':
 			verbose = true;
 			break;
@@ -147,7 +152,12 @@ exec_diff(int argc, char **argv)
 		return (EX_USAGE);
 	}
 
-	ret = pkgdb_access(PKGDB_MODE_READ, PKGDB_DB_LOCAL|PKGDB_DB_REPO);
+	if (auto_update)
+		mode = PKGDB_MODE_READ|PKGDB_MODE_WRITE|PKGDB_MODE_CREATE;
+	else
+		mode = PKGDB_MODE_READ;
+			
+	ret = pkgdb_access(mode, PKGDB_DB_LOCAL|PKGDB_DB_REPO);
 	if (ret == EPKG_ENODB) {
 		if (!quiet)
 			warnx("No packages installed.  Nothing to do!");
@@ -162,14 +172,24 @@ exec_diff(int argc, char **argv)
 		return (EX_SOFTWARE);
 	}
 
-	ret = pkgdb_open(&db, PKGDB_DEFAULT);
+	if (auto_update) {
+		ret = pkgcli_update(false, false, reponame);
+		if (ret != EPKG_OK)
+			return (ret);
+	}
+	
+	ret = pkgdb_open_all(&db, PKGDB_REMOTE, reponame);
 	if (ret != EPKG_OK) {
 		if (!quiet)
 			warnx("Error opening the package database");
 		return (EX_IOERR);
 	}
 
-	ret = pkgdb_obtain_lock(db, PKGDB_LOCK_ADVISORY);
+	/* We want to fetch all the packages we might use for upgrade
+	 * so we can access the file lists. Hence we need to update
+	 * the repo catalogues.*/
+	
+	ret = pkgdb_obtain_lock(db, PKGDB_LOCK_READONLY);
 	if (ret != EPKG_OK) {
 		pkgdb_close(db);
 		if (!quiet)
@@ -179,7 +199,7 @@ exec_diff(int argc, char **argv)
 
 	ret = do_diff_matched_packages(db, match, reponame, argc, argv);
 
-	pkgdb_release_lock(db, PKGDB_LOCK_ADVISORY);
+	pkgdb_release_lock(db, PKGDB_LOCK_READONLY);
 	pkgdb_close(db);
 	
 	return ((ret == EPKG_OK) ? EX_OK : EX_SOFTWARE);

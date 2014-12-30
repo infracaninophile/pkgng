@@ -285,6 +285,7 @@ pkg_jobs_cudf_emit_file(struct pkg_jobs *j, pkg_jobs_t t, FILE *f)
 
 	switch (t) {
 	case PKG_JOBS_FETCH:
+	case PKG_JOBS_DIFF:
 	case PKG_JOBS_INSTALL:
 	case PKG_JOBS_DEINSTALL:
 	case PKG_JOBS_AUTOREMOVE:

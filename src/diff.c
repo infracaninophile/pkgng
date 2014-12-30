@@ -46,34 +46,33 @@ int
 do_diff_matched_packages(struct pkgdb *db, match_t match,
 			 const char *reponame, int argc, char **argv)
 {
-	struct pkgdb_it	*it = NULL;
-	struct pkg	*pkg = NULL;
+	struct pkg_jobs	*jobs = NULL;
 	int		 ret;
-	int		 i;
 	
-	if (match == MATCH_ALL)
-		argc = 1;	/* At least once through the loop */
+	ret = pkg_jobs_new(&jobs, PKG_JOBS_DIFF, db);
+	if (ret != EPKG_OK)
+		return (ret);
 
-	for (i = 0; i < argc; i++) {
-		it = pkgdb_query(db, argv[i], match);
-		if (it == NULL) {
-			pkg_free(pkg);
-			return (EX_IOERR);
-		}
-		
-		while(pkgdb_it_next(it, &pkg, PKG_LOAD_FILES) == EPKG_OK) {
-			ret = do_diff_package(db, pkg, reponame);
-			if (ret != EPKG_OK)
-				break;
-		}
-
-		pkgdb_it_free(it);
-
+	if (reponame != NULL) {
+		ret = pkg_jobs_set_repository(jobs, reponame);
 		if (ret != EPKG_OK)
-			break;
+			goto cleanup;
 	}
+			
+	ret = pkg_jobs_add(jobs, match, argv, argc);
+	if (ret != EPKG_OK)
+		goto cleanup;
 
-	pkg_free(pkg);
+	ret = pkg_jobs_solve(jobs);
+	if (ret != EPKG_OK)
+		goto cleanup;
+
+	
+	
+
+cleanup:
+	pkg_jobs_free(jobs);
+
 	
 	return (ret);
 }

@@ -477,6 +477,7 @@ pkg_jobs_universe_process_item(struct pkg_jobs_universe *universe, struct pkg *p
 
 	switch(type) {
 	case PKG_JOBS_FETCH:
+	case PKG_JOBS_DIFF:
 		if (job_flags & PKG_FLAG_RECURSIVE) {
 			flags |= DEPS_FLAG_MIRROR;
 			/* For fetch jobs we worry about depends only */

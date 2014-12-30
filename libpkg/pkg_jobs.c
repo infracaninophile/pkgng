@@ -28,6 +28,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef HAVE_CONFIG_H
+#include "pkg_config.h"
+#endif
+
 #include <sys/param.h>
 #include <sys/mount.h>
 #include <sys/types.h>
@@ -36,12 +40,16 @@
 #include <archive_entry.h>
 #include <assert.h>
 #include <errno.h>
+#ifdef HAVE_LIBUTIL_H
 #include <libutil.h>
+#endif
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <ctype.h>
+
+#include <bsd_compat.h>
 
 #include "utarray.h"
 
@@ -751,6 +759,20 @@ pkg_jobs_process_remote_pkg(struct pkg_jobs *j, struct pkg *rp,
 	return (nrit != NULL ? EPKG_OK : EPKG_FATAL);
 }
 
+static bool
+pkg_jobs_has_replacement(struct pkg_jobs *j, const char *uid)
+{
+	struct pkg_job_replace *cur;
+
+	LL_FOREACH(j->universe->uid_replaces, cur) {
+		if (strcmp (cur->new_uid, uid) == 0) {
+			return (true);
+		}
+	}
+
+	return (false);
+}
+
 static int
 pkg_jobs_try_remote_candidate(struct pkg_jobs *j, const char *pattern,
     const char *uid, match_t m)
@@ -770,6 +792,11 @@ pkg_jobs_try_remote_candidate(struct pkg_jobs *j, const char *pattern,
 	qmsg = sbuf_new_auto();
 
 	while (it != NULL && pkgdb_it_next(it, &p, flags) == EPKG_OK) {
+		if (pkg_jobs_has_replacement(j, p->uid)) {
+			pkg_debug(1, "replacement %s is already used", p->uid);
+			continue;
+		}
+
 		sbuf_printf(qmsg, "%s has no direct installation candidates, change it to "
 				"%s? [Y/n]: ", uid, p->uid);
 		sbuf_finish(qmsg);
@@ -1428,7 +1455,6 @@ jobs_solve_install_upgrade(struct pkg_jobs *j)
 
 				pkg = NULL;
 				while (pkgdb_it_next(it, &pkg, flags) == EPKG_OK) {
-					/* TODO: use repository priority here */
 					/* Do not test we ignore what doesn't exists remotely */
 					pkg_jobs_find_upgrade(j, pkg->uid, MATCH_EXACT);
 				}

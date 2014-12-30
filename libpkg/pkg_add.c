@@ -167,25 +167,13 @@ do_extract(struct archive *a, struct archive_entry *ae, const char *location,
 		rf = NULL;
 		rcf = NULL;
 		pkg_absolutepath(archive_entry_pathname(ae), path, sizeof(path));
-		snprintf(pathname, sizeof(pathname), "%s/%s",
-		    location ? location : "",
+		snprintf(pathname, sizeof(pathname), "%s%s%s",
+		    location ? location : "", *path == '/' ? "" : "/",
 		    path
 		);
 		strlcpy(rpath, pathname, sizeof(rpath));
 
 		if (lstat(rpath, &st) != -1) {
-			/* check is the old version is the same as the new version */
-			if (S_ISREG(st.st_mode) && st.st_size == archive_entry_size(ae)) {
-				char localsum[SHA256_DIGEST_LENGTH * 2 + 1];
-				if (sha256_file(rpath, localsum) == EPKG_OK) {
-					HASH_FIND_STR(pkg->files, path, rf);
-					if (strcmp(localsum, rf->sum) == 0) {
-						pkg_debug(2, "Do not extract identical file");
-						pkg_emit_progress_tick(cur_file++, nfiles);
-						continue;
-					}
-				}
-			}
 			/*
 			 * We have an existing file on the path, so handle it
 			 */

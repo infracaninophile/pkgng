@@ -34,6 +34,8 @@
 #ifdef HAVE_LDNS
 #include <ldns/ldns.h>
 #else
+#define BIND_8_COMPAT
+#include <arpa/nameser.h>
 #include <resolv.h>
 #endif
 #include <netdb.h>

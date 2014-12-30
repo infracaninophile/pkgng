@@ -15,7 +15,7 @@
 .\"     @(#)pkg.1
 .\" $FreeBSD$
 .\"
-.Dd November 18, 2014
+.Dd December 29, 2014
 .Dt PKG.CONF 5
 .Os
 .Sh NAME
@@ -80,6 +80,10 @@ which require user confirmation before doing anything, as if it
 the
 .Fl y
 flag was specified.
+Default: NO.
+.It Cm CONSERVATIVE_UPGRADE: boolean
+Ensure in multi repository mode that the priority is given as much as possible
+to the repository where a package was first installed from.
 Default: NO.
 .It Cm CUDF_SOLVER: string
 Experimental: tells pkg to use an external CUDF solver.
@@ -343,6 +347,9 @@ Could be 4 for IPv4, 6 for IPv6 or any other value for system default.
 This option overrides the global setting with the same name and can be
 overwritten by a command line option.
 Default: 0.
+.It Cm PRIORITY: integer
+Set the priority of the repository the higher is the prefered repository.
+Default: 0
 .El
 .El
 .Pp

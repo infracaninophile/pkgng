@@ -37,12 +37,6 @@
 static bool	verbose = false;
 
 int
-do_diff_package(struct pkgdb *db, struct pkg *pkg, const char *repname)
-{
-	return (EPKG_OK);
-}
-
-int
 do_diff_matched_packages(struct pkgdb *db, match_t match,
 			 const char *reponame, int argc, char **argv)
 {
@@ -67,12 +61,10 @@ do_diff_matched_packages(struct pkgdb *db, match_t match,
 	if (ret != EPKG_OK)
 		goto cleanup;
 
+	ret = pkg_jobs_apply(jobs);
 	
-	
-
 cleanup:
 	pkg_jobs_free(jobs);
-
 	
 	return (ret);
 }

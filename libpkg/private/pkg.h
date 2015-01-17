@@ -30,6 +30,8 @@
 #ifndef _PKG_PRIVATE_H
 #define _PKG_PRIVATE_H
 
+#include "bsd_compat.h"
+
 #include <sys/param.h>
 #include <sys/cdefs.h>
 #include <sys/sbuf.h>
@@ -38,7 +40,6 @@
 #include <archive.h>
 #include <sqlite3.h>
 #include <openssl/sha.h>
-#include <openssl/md5.h>
 #include <stdbool.h>
 #include <uthash.h>
 #include <utlist.h>
@@ -189,11 +190,6 @@ struct pkg_dep {
 	UT_hash_handle	 hh;
 };
 
-struct pkg_strel {
-	char *value;
-	struct pkg_strel *next;
-};
-
 enum pkg_conflict_type {
 	PKG_CONFLICT_ALL = 0,
 	PKG_CONFLICT_REMOTE_LOCAL,
@@ -270,6 +266,9 @@ struct pkg_repo_meta_key {
 typedef enum pkg_checksum_type_e {
 	PKG_HASH_TYPE_SHA256_BASE32 = 0,
 	PKG_HASH_TYPE_SHA256_HEX,
+	PKG_HASH_TYPE_BLAKE2_BASE32,
+	PKG_HASH_TYPE_SHA256_RAW,
+	PKG_HASH_TYPE_BLAKE2_RAW,
 	PKG_HASH_TYPE_UNKNOWN
 } pkg_checksum_type_t;
 
@@ -502,6 +501,7 @@ bool pkg_repo_meta_is_special_file(const char *file, struct pkg_repo_meta *meta)
 typedef enum {
 	HASH_UNKNOWN,
 	HASH_SHA256,
+	HASH_BLAKE2
 } hash_t;
 
 struct fingerprint {
@@ -607,9 +607,17 @@ pkg_object* pkg_emit_object(struct pkg *pkg, short flags);
 
 /* Hash is in format <version>:<typeid>:<hexhash> */
 #define PKG_CHECKSUM_SHA256_LEN (SHA256_DIGEST_LENGTH * 2 + sizeof("100") * 2 + 2)
+#define PKG_CHECKSUM_BLAKE2_LEN (BLAKE2B_OUTBYTES * 8 / 5 + sizeof("100") * 2 + 2)
 #define PKG_CHECKSUM_CUR_VERSION 2
 
 int pkg_checksum_generate(struct pkg *pkg, char *dest, size_t destlen,
+	pkg_checksum_type_t type);
+
+/*
+ * Calculates checksum for any data.
+ * Caller must free resulting hash after usage
+ */
+unsigned char * pkg_checksum_data(const unsigned char *in, size_t inlen,
 	pkg_checksum_type_t type);
 
 bool pkg_checksum_is_valid(const char *cksum, size_t clen);

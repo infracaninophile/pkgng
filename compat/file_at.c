@@ -24,13 +24,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <bsd_compat.h>
 #include <assert.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <unistd.h>
-
-#include <bsd_compat.h>
 
 #if !HAVE_UNLINKAT || !HAVE_FSTATAT
 

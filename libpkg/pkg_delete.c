@@ -28,6 +28,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef HAVE_CONFIG_H
+#include "pkg_config.h"
+#endif
+
 #include <assert.h>
 #include <errno.h>
 #include <string.h>
@@ -42,6 +46,8 @@
 #include "private/pkg.h"
 #include "private/pkgdb.h"
 #include "private/utils.h"
+
+#define NOCHANGESFLAGS	(UF_IMMUTABLE | UF_APPEND | SF_IMMUTABLE | SF_APPEND)
 
 int
 pkg_delete(struct pkg *pkg, struct pkgdb *db, unsigned flags)
@@ -161,6 +167,10 @@ rmdir_p(struct pkgdb *db, struct pkg *pkg, char *dir, const char *prefix_r)
 	int64_t cnt;
 	char fullpath[MAXPATHLEN];
 	size_t len;
+	struct stat st;
+#if defined(HAVE_CHFLAGS) && !defined(HAVE_CHFLAGSAT)
+	int fd;
+#endif
 
 	len = snprintf(fullpath, sizeof(fullpath), "/%s", dir);
 	while (fullpath[len -1] == '/') {
@@ -184,6 +194,23 @@ rmdir_p(struct pkgdb *db, struct pkg *pkg, char *dir, const char *prefix_r)
 		return;
 
 	pkg_debug(1, "removing directory %s", fullpath);
+#ifdef HAVE_CHFLAGS
+	if (fstatat(pkg->rootfd, dir, &st, AT_SYMLINK_NOFOLLOW) != -1) {
+		if (st.st_flags & NOCHANGESFLAGS)
+#ifdef HAVE_CHFLAGSAT
+			chflagsat(pkg->rootfd, dir,
+			    st.st_flags & ~NOCHANGESFLAGS,
+			    AT_SYMLINK_NOFOLLOW);
+#else
+			fd = openat(pkg->rootfd, dir, O_NOFOLLOW);
+			if (fd > 0) {
+				fchflags(fd, st.st_flags & ~NOCHANGESFLAGS);
+				close(fd);
+			}
+#endif
+	}
+#endif
+
 	if (unlinkat(pkg->rootfd, dir, AT_REMOVEDIR) == -1) {
 		if (errno != ENOTEMPTY && errno != EBUSY)
 			pkg_emit_errno("unlinkat", dir);
@@ -230,6 +257,9 @@ pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force)
 	struct stat st;
 	size_t len;
 	char sha256[SHA256_DIGEST_LENGTH * 2 + 1];
+#if defined(HAVE_CHFLAGS) && !defined(HAVE_CHFLAGSAT)
+	int fd;
+#endif
 
 	pkg_open_root_fd(pkg);
 
@@ -267,6 +297,22 @@ pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force)
 		}
 	}
 
+#ifdef HAVE_CHFLAGS
+	if (fstatat(pkg->rootfd, path, &st, AT_SYMLINK_NOFOLLOW) != -1) {
+		if (st.st_flags & NOCHANGESFLAGS)
+#ifdef HAVE_CHFLAGSAT
+			chflagsat(pkg->rootfd, path,
+			    st.st_flags & ~NOCHANGESFLAGS,
+			    AT_SYMLINK_NOFOLLOW);
+#else
+			fd = openat(pkg->rootfd, path, O_NOFOLLOW);
+			if (fd > 0) {
+				fchflags(fd, st.st_flags & ~NOCHANGESFLAGS);
+				close(fd);
+			}
+#endif
+	}
+#endif
 	if (unlinkat(pkg->rootfd, path, 0) == -1) {
 		if (force < 2)
 			pkg_emit_errno("unlinkat", path);

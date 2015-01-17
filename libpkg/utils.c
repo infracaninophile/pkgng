@@ -34,9 +34,6 @@
 
 #include <assert.h>
 #include <errno.h>
-#ifdef HAVE_EXECINFO_H
-#include <execinfo.h>
-#endif
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -365,17 +362,6 @@ is_dir(const char *path)
 	struct stat st;
 
 	return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
-}
-
-static void
-md5_hash(unsigned char hash[MD5_DIGEST_LENGTH],
-    char out[MD5_DIGEST_LENGTH * 2 + 1])
-{
-	int i;
-	for (i = 0; i < MD5_DIGEST_LENGTH; i++)
-		sprintf(out + (i *2), "%02x", hash[i]);
-
-	out[MD5_DIGEST_LENGTH * 2] = '\0';
 }
 
 static void
@@ -754,27 +740,6 @@ ucl_object_emit_sbuf(const ucl_object_t *obj, enum ucl_emitter emit_type,
 	sbuf_finish(*buf);
 
 	return (ret);
-}
-
-void
-print_trace(void)
-{
-	return;
-
-#ifdef HAVE_EXECINFO_H
-	void *array[10];
-	size_t size;
-	char **strings;
-	size_t i;
-
-	size = backtrace(array, 10);
-	strings = backtrace_symbols(array, size);
-
-	for (i = 0; i < size; i++)
-		fprintf(stderr, "%s\n", strings[i]);
-
-	free(strings);
-#endif
 }
 
 static int

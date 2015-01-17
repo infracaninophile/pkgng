@@ -3,10 +3,10 @@ AUTOMAKE_OPTIONS=	subdir-objects
 GENERIC_LDADD=	$(top_builddir)/libpkg/libpkg_static.la \
 		$(top_builddir)/external/libsbuf_static.la \
 		$(top_builddir)/compat/libbsd_compat.la \
+		$(top_builddir)/external/libfetch_static.la \
 		@LDNS_LIBS@ \
 		@LIBJAIL_LIB@ \
-		@LIBEXECINFO_LIB@ \
-		-lfetch \
+		@OS_LIBS@ \
 		-larchive \
 		-lutil \
 		-lm \
@@ -24,10 +24,13 @@ endif
 endif
 
 if HAVE_MACHO_ABI
-GENERIC_LDADD+=	$(top_builddir)/external/libmachista_static.la
+GENERIC_LDADD+=	$(top_builddir)/external/libmachista_static.la \
+		-lresolv
 endif
 
-PUBLIC_INCS=	-I$(top_srcdir)/libpkg -DTESTING \
+PUBLIC_INCS=	-DTESTING \
+		-I$(top_srcdir)/compat \
+		-I$(top_srcdir)/libpkg \
 		-I/usr/local/include
 PRIVATE_INCS=	$(PUBLIC_INCS) \
 		-I$(top_srcdir)/external/libsbuf \

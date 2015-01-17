@@ -28,12 +28,15 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "pkg_config.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
 #include <sys/wait.h>
 #include <sys/socket.h>
+#include <sys/file.h>
+#include <sys/time.h>
 
 #include <archive_entry.h>
 #include <assert.h>
@@ -57,7 +60,7 @@
 #include "private/utils.h"
 #include "private/pkg.h"
 #include "private/pkgdb.h"
-#include "pkg_config.h"
+
 
 struct digest_list_entry {
 	char *origin;
@@ -579,8 +582,12 @@ pkg_create_repo(char *path, const char *output_dir, bool filelist,
 	num_workers = pkg_object_int(pkg_config_get("WORKERS_COUNT"));
 	if (num_workers <= 0) {
 		len = sizeof(num_workers);
+#ifdef HAVE_SYSCTLBYNAME
 		if (sysctlbyname("hw.ncpu", &num_workers, &len, NULL, 0) == -1)
 			num_workers = 6;
+#else
+		num_workers = 6;
+#endif
 	}
 
 	if ((fts = fts_open(repopath, FTS_PHYSICAL|FTS_NOCHDIR, NULL)) == NULL) {

@@ -2,7 +2,7 @@
  * Copyright (c) 2011-2012 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
  * Copyright (c) 2011-2012 Marin Atanasov Nikolov <dnaeon@gmail.com>
- * Copyright (c) 2012-2014 Matthew Seaman <matthew@FreeBSD.org>
+ * Copyright (c) 2012-2015 Matthew Seaman <matthew@FreeBSD.org>
  * Copyright (c) 2013-2014 Vsevolod Stakhov <vsevolod@FreeBSD.org>
  * All rights reserved.
  * 
@@ -271,7 +271,6 @@ print_info(struct pkg * const pkg, uint64_t options)
 {
 	bool print_tag = false;
 	bool show_locks = false;
-	char size[7];
 	const char *repourl;
 	unsigned opt;
 	int64_t flatsize, oldflatsize, pkgsize;
@@ -374,9 +373,13 @@ print_info(struct pkg * const pkg, uint64_t options)
 			pkg_printf("%n\n", pkg);
 			break;
 		case INFO_INSTALLED:
-			if (print_tag)
-				printf("%-15s: ", "Installed on");
-			pkg_printf("%t%{%+%}\n", pkg);
+			if (pkg_type(pkg) != PKG_REMOTE) {
+				if (print_tag) {
+					printf("%-15s: ", "Installed on");
+					pkg_printf("%t%{%+%}\n", pkg);
+				}
+			} else if (!print_tag)
+				printf("\n");
 			break;
 		case INFO_VERSION:
 			if (print_tag)
@@ -472,12 +475,9 @@ print_info(struct pkg * const pkg, uint64_t options)
 			break;
 		case INFO_PKGSIZE: /* Remote pkgs only */
 			if (pkg_type(pkg) == PKG_REMOTE) {
-				humanize_number(size, sizeof(size),
-						pkgsize,"B",
-						HN_AUTOSCALE, 0);
 				if (print_tag)
 					printf("%-15s: ", "Pkg size");
-				printf("%s\n", size);
+				pkg_printf("%#xB\n", pkg);
 			} else if (!print_tag)
 				printf("\n");
 			break;
@@ -731,7 +731,7 @@ display_summary_item (struct pkg_solved_display_item *it, int64_t total_size,
 {
 	const char *why;
 	int64_t pkgsize;
-	char size[7], tlsize[7];
+	char size[8], tlsize[8];
 
 	pkg_get(it->new, PKG_PKGSIZE, &pkgsize);
 
@@ -790,8 +790,10 @@ display_summary_item (struct pkg_solved_display_item *it, int64_t total_size,
 		printf("\n");
 		break;
 	case PKG_DISPLAY_FETCH:
-		humanize_number(size, sizeof(size), pkgsize, "B", HN_AUTOSCALE, 0);
-		humanize_number(tlsize, sizeof(size), dlsize, "B", HN_AUTOSCALE, 0);
+		humanize_number(size, sizeof(size), pkgsize, "B",
+		    HN_AUTOSCALE, HN_IEC_PREFIXES);
+		humanize_number(tlsize, sizeof(size), dlsize, "B",
+		    HN_AUTOSCALE, HN_IEC_PREFIXES);
 
 		pkg_printf("\t%n-%v ", it->new, it->new);
 		printf("(%.2f%% of %s: %s)\n", ((double)100 * pkgsize) / (double)dlsize,
@@ -862,15 +864,18 @@ print_jobs_summary(struct pkg_jobs *jobs, const char *msg, ...)
 		puts("");
 
 	if (oldsize > newsize) {
-		humanize_number(size, sizeof(size), oldsize - newsize, "B", HN_AUTOSCALE, 0);
+		humanize_number(size, sizeof(size), oldsize - newsize, "B",
+		    HN_AUTOSCALE, HN_IEC_PREFIXES);
 		printf("The operation will free %s.\n", size);
 	} else if (newsize > oldsize) {
-		humanize_number(size, sizeof(size), newsize - oldsize, "B", HN_AUTOSCALE, 0);
+		humanize_number(size, sizeof(size), newsize - oldsize, "B",
+		    HN_AUTOSCALE, HN_IEC_PREFIXES);
 		printf("The process will require %s more space.\n", size);
 	}
 
 	if (dlsize > 0) {
-		humanize_number(size, sizeof(size), dlsize, "B", HN_AUTOSCALE, 0);
+		humanize_number(size, sizeof(size), dlsize, "B",
+		    HN_AUTOSCALE, HN_IEC_PREFIXES);
 		printf("%s to be downloaded.\n", size);
 	}
 

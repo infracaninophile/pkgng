@@ -42,7 +42,11 @@
 #include "private/pkg.h"
 #include "private/pkgdb.h"
 
+#if defined(__APPLE__)
 #define NOCHANGESFLAGS	(UF_IMMUTABLE | UF_APPEND | SF_IMMUTABLE | SF_APPEND)
+#else
+#define NOCHANGESFLAGS	(UF_IMMUTABLE | UF_APPEND | UF_NOUNLINK | SF_IMMUTABLE | SF_APPEND | SF_NOUNLINK)
+#endif
 
 
 static const unsigned char litchar[] =
@@ -151,6 +155,7 @@ do_extract(struct archive *a, struct archive_entry *ae, const char *location,
 	struct pkg_config_file *rcf;
 	struct sbuf *newconf;
 	bool automerge = pkg_object_bool(pkg_config_get("AUTOMERGE"));
+	unsigned long set, clear;
 
 #ifndef HAVE_ARC4RANDOM
 	srand(time(NULL));
@@ -177,6 +182,7 @@ do_extract(struct archive *a, struct archive_entry *ae, const char *location,
 		strlcpy(rpath, pathname, sizeof(rpath));
 
 		aest = archive_entry_stat(ae);
+		archive_entry_fflags(ae, &set, &clear);
 		if (lstat(rpath, &st) != -1) {
 			/*
 			 * We have an existing file on the path, so handle it
@@ -261,13 +267,13 @@ do_extract(struct archive *a, struct archive_entry *ae, const char *location,
 			pkg_debug(1, "Renaming %s -> %s", rpath, pathname);
 #ifdef HAVE_CHFLAGS
 			bool old = false;
-			if (aest->st_flags & NOCHANGESFLAGS)
-				chflags(rpath, aest->st_flags & ~NOCHANGESFLAGS);
+			if (set & NOCHANGESFLAGS)
+				chflags(rpath, 0);
 
 			if (lstat(pathname, &st) != -1) {
 				old = true;
 				if (st.st_flags & NOCHANGESFLAGS)
-					chflags(pathname, aest->st_flags & ~NOCHANGESFLAGS);
+					chflags(pathname, 0);
 			}
 #endif
 
@@ -283,8 +289,8 @@ do_extract(struct archive *a, struct archive_entry *ae, const char *location,
 				goto cleanup;
 			}
 #ifdef HAVE_CHFLAGS
-			/* Restore flags on the final file */
-			chflags(pathname, aest->st_flags);
+			/* Restore flags */
+			chflags(pathname, set);
 #endif
 		}
 
@@ -307,8 +313,8 @@ cleanup:
 
 	if (renamed && retcode == EPKG_FATAL) {
 #ifdef HAVE_CHFLAGS
-		if (aest->st_flags & NOCHANGESFLAGS)
-			chflags(rpath, aest->st_flags & ~NOCHANGESFLAGS);
+		if (set & NOCHANGESFLAGS)
+			chflags(rpath, set & ~NOCHANGESFLAGS);
 #endif
 		unlink(rpath);
 	}

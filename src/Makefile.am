@@ -11,6 +11,7 @@ pkg_SOURCES=		add.c \
 			convert.c \
 			create.c \
 			delete.c \
+			diff.c \
 			event.c \
 			fetch.c \
 			globals.c \
@@ -35,7 +36,7 @@ pkg_SOURCES=		add.c \
 			utils.c \
 			version.c \
 			which.c
-			
+
 pkg_LDADD=	@OS_LDFLAGS@ \
 			$(top_builddir)/libpkg/libpkg.la \
 			$(top_builddir)/external/libsbuf.la \

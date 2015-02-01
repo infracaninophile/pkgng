@@ -91,6 +91,7 @@ static struct commands {
 	{ "convert", "Convert database from/to pkgng", exec_convert, usage_convert},
 	{ "create", "Creates software package distributions", exec_create, usage_create},
 	{ "delete", "Deletes packages from the database and the system", exec_delete, usage_delete},
+	{ "diff", "Show differences between installed package and available update", exec_diff, usage_diff},
 	{ "fetch", "Fetches packages from a remote repository", exec_fetch, usage_fetch},
 	{ "help", "Displays help information", exec_help, usage_help},
 	{ "info", "Displays information about installed packages", exec_info, usage_info},

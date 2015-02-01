@@ -1,0 +1,256 @@
+.\"
+.\" FreeBSD pkg - a next generation package for the installation and
+.\" maintenance of non-core utilities.
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\"
+.\"     @(#)pkg-repository.5
+.\" $FreeBSD$
+.\"
+.Dd January 14, 2013
+.Dt PKG-MANIFEST 5
+.Os
+.Sh NAME
+.Nm "package metadata"
+.Nd supplementary data used by
+.Xr pkg 8
+.Pp
+.Nm "package manifest"
+.Nd format of the package manifests used by
+.Xr pkg 8 .
+.Pp
+.Nm "package compact_manifest"
+.Nd the optional compact version of the package manifest.
+.Pp
+.Nm "package tarball"
+.Nd format of a package when gathered into a single archive file
+for distribution between systems.
+.Sh DESCRIPTION
+The
+.Xr pkg 8
+system exists for the manipulation of
+.Em packages :
+collections of files that form part or all of a suite of software,
+and that are installed or deleted as a unit.
+Packages track not only the
+.Em files ,
+.Em directories
+and
+.Em symbolic links
+they contain, but also file
+.Em checksums,
+plus
+.Em user
+and
+.Em group
+ownership and filesystem
+.Em permissions
+where those take non-standard values.
+.Pp
+Each package has a
+.Em name ,
+.Em version
+and an
+.Em origin .
+The name and version are typically derived from the upstream project,
+occasionally with minor augmentations necessary for the proper
+working of the ports system.
+The packaging system tracks the availability of verson upgrades and
+manages replacing older with newer versions, resolving any changes in
+dependencies or conflicts encountered.
+The package origin is the unique key for each different port within
+the ports tree: this allows the ports to contain several versions of
+the same software package, or distinct software packages that
+coincidentally have the same name.
+.Pp
+Packages can have
+.Em requirements :
+other software beyond the base system that has to be installed for it
+to function correctly.
+In many cases the requirement is for a particular ABI version of a
+shared library.
+Other requirements might be for the presence of some specific data or
+executable programs.
+Similarly, packages may have
+.Em conflicts :
+other software in whose presence the packaged software cannot be
+installed or will not run correctly.
+Conflicts commonly result from more than one package wanting to
+install files of the same name.
+.Pp
+Packages may also need
+.Em scripts
+to be run on installation, deinstallation or upgrade; for instance to
+set up a new user id to own files or processes, or to set up directory
+structures to hold working data not counted as part of the package.
+.Pp
+
+Finally, a package also has a long- and a short- form description
+(called
+.Em description
+and
+.Em comment ,
+respectively), a
+.Em maintainer
+responsible for debugging and keeping the port up to date, frequently
+a
+.Em URL
+link to the website for the originating project, possibly a
+.Em message
+set by the maintainer for the information of the user; often the next
+steps they will need to take after installation.
+A packages may also have
+.Em annotations ;
+ad hoc text added to packages by the user.
+.Sh PACKAGE METADATA STORAGE
+Collectively, all of the data contained within the package but
+additional to the actual file content of the package, is called the
+.Nm package metadata .
+.Pp
+Metadata are stored in four distinct forms across the package lifecycle.
+.Pp
+Two of these involve storage within sqlite(3) database schema:
+.Pa ${PKG_DBDIR}/local.sqlite ,
+the registry of all the packages installed on a system, and
+.Pa ${PKG_DBDIR}/repo-${reponame}.sqlite ,
+the repository catalogue for the repository named reponame in
+.Xr pkg.conf 5 .
+Whilst the same data is available from the local package or repository
+catlogue databases, no guarantees about the database schema will be
+made; they are intended to be opaque to the user.
+The schema are subject to change without notice, and users are advised
+to access the data only through the API provided by
+.Pa libpkg.so.1 .
+.Pp
+The other two forms are self-contained JSON documents: the
+.Pa +MANIFEST
+and
+.Pa +COMPACT_MANIFEST
+files within a package tarball contain the metadata specific to that
+package.
+.Pa +COMPACT_MANIFEST
+is a subset of the full package metadata held in
+.Pa +MANIFEST .
+Package repository catalogues (see
+.Xr pkg-repository 5 ,
+.Xr pkg-repo 8 )
+consist of the collection of the
+.Pa +COMPACT_MANIFEST
+data from each of the packages within the repository, plus an optional
+cryptographic signature.
+.Pp
+Additionally a package may contain
+.Pa +MTREE_DIRS :
+an optional legacy metadata file, retained for compatibility with the
+old package tools (see
+.Xr pkg_add 1 )
+which provides a description of the standard filesystem layout under
+.Ev $LOCALBASE
+common to all packages.
+This form is redundant as the
+.Xr pkg 8
+native format is entirely capable of describing the layout.
+See
+.Xr mtree 5
+for a description of the format.
+.Pp
+Any single package may exist in two distinct states: installed, with
+the files distributed around the filesystem and package metadata
+registered in the local database
+.Pa ${PKG_DBDIR}/local.sqlite ;
+or with the files and metadata collected together into a package
+tarball suitable for transmission between systems.
+The two forms are readily interconvertible.
+See
+.Xr pkg-create 8
+for how to convert the installed form of a package into a package
+tarball, and
+.Xr pkg-add 8
+or
+.Xr pkg-install 8
+for the converse.
+.Pp
+With three exceptions, package metadata is conserved across such
+transformations.
+These are package lock status (see
+.Xr pkg-lock 8 ) ,
+package autoremove status (see
+.Xr pkg-autoremove 8
+and the description of the
+.Fl A
+flag in
+.Xr pkg-set 8 ) ,
+and the package installation timestamp, all of which only apply to
+installed packages.
+.Sh PACKAGE TARBALLS
+The package tarball is a
+.Xr tar 1
+format archive file.
+Any form of compression understood by
+.Xr libarchive 3
+may be used, but the default is
+.Xr xz 1
+compression, as this gives the smallest result.
+Package tarballs are conventionally named based on the name and
+version of the software they contain with a .txz extension, but this
+is not mandatory.
+Any file name may be used, so long as the content follows the correct
+format.
+.Pp
+Each package tarball contains a sequence of files.
+The initial file or files, distinguished by an archive name entry
+without a leading path, and a file name begining with a
+.Sq +
+character, contain package metadata.
+Of these, only the
+.Pa +MANIFEST
+file is mandatory: other metadata files are optional.
+.Pp
+All subsequent files in the package archive are the package data.
+Data files have archive name entries which are the fully qualified
+path rela- tive to the root directory, which they will be copied to on
+package installation.
+There is no facility for relocating package files, other than when
+installing into a chroot or jail.
+Even so, the view of the filesystem visible to the package files at
+run-time should match the layout encoded into the package tarball.
+.Sh METADATA
+.\"annotations       CM if present
+.\"arch              CM
+.\"autoremove        -
+.\"categories        CM if present
+.\"comment           CM
+.\"deps              CM if present
+.\"desc              CM
+.\"directories       M  if present
+.\"files             M  if      present
+.\"flatsize          CM
+.\"groups            CM if present
+.\"licenselogic      CM
+.\"licenses          CM optional
+.\"lock              -
+.\"maintainer        CM
+.\"message           M  optional
+.\"mtree	     -
+.\"name              CM
+.\"options           CM if present
+.\"origin            CM
+.\"path              CM optional
+.\"pkgsize           CM if > 0
+.\"pkgsum            CM optional
+.\"prefix            CM
+.\"scripts           M  if present
+.\"shlibs_provided   CM if      present
+.\"shlibs_required   CM if present
+.\"users             CM if present
+.\"version           CM
+.\"www               CM
+

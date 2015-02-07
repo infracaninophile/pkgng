@@ -315,6 +315,7 @@ pkg_jobs_add_req_from_universe(struct pkg_job_request **head,
 			nit = calloc(1, sizeof(*nit));
 			if (nit == NULL) {
 				pkg_emit_errno("malloc", "struct pkg_job_request_item");
+				free(req);
 				return (NULL);
 			}
 			nit->pkg = uit->pkg;
@@ -1197,10 +1198,8 @@ pkg_jobs_propagate_automatic(struct pkg_jobs *j)
 				unit->pkg->automatic = automatic;
 			}
 			else {
-				if (j->type == PKG_JOBS_INSTALL) {
-					automatic = false;
+				if (j->type == PKG_JOBS_INSTALL)
 					unit->pkg->automatic = false;
-				}
 			}
 		}
 		else {

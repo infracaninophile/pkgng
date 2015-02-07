@@ -279,6 +279,7 @@ pkg_create_repo_worker(struct pkg_fts_item *start, size_t nelts,
 	if (read_files) {
 		ffd = open(flfile, O_APPEND|O_CREAT|O_WRONLY, 00644);
 		if (ffd == -1) {
+			close(mfd);
 			pkg_emit_errno("pkg_create_repo_worker", "open");
 			return (EPKG_FATAL);
 		}
@@ -288,6 +289,9 @@ pkg_create_repo_worker(struct pkg_fts_item *start, size_t nelts,
 	switch(pid) {
 	case -1:
 		pkg_emit_errno("pkg_create_repo_worker", "fork");
+		close(mfd);
+		if (read_files)
+			close(ffd);
 		return (EPKG_FATAL);
 		break;
 	case 0:
@@ -536,7 +540,7 @@ pkg_create_repo(char *path, const char *output_dir, bool filelist,
 	struct digest_list_entry *dlist = NULL, *cur_dig, *dtmp;
 	struct pollfd *pfd = NULL;
 	int cur_pipe[2], fd;
-	struct pkg_repo_meta *meta;
+	struct pkg_repo_meta *meta = NULL;
 	int retcode = EPKG_OK;
 
 	char *repopath[2];
@@ -995,6 +999,7 @@ pkg_finish_repo(const char *output_dir, pem_password_cb *password_cb,
 	if (access(repo_path, R_OK) != -1) {
 		if (pkg_repo_meta_load(repo_path, &meta) != EPKG_OK) {
 			pkg_emit_error("meta loading error while trying %s", repo_path);
+			rsa_free(rsa);
 			return (EPKG_FATAL);
 		}
 		else {

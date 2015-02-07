@@ -456,6 +456,7 @@ pkg_repo_parse_sigkeys(const char *in, int inlen, struct sig_cert **sc)
 			else if (len >= MAXPATHLEN) {
 				pkg_emit_error("filename is incorrect for signature_fingerprints"
 						"output: %d, wanted 5..%d bytes", type, len, MAXPATHLEN);
+				free(s);
 				return (EPKG_FATAL);
 			}
 			HASH_FIND(hh, *sc, p, len, s);
@@ -484,6 +485,7 @@ pkg_repo_parse_sigkeys(const char *in, int inlen, struct sig_cert **sc)
 			if (end - p < sizeof (int)) {
 				pkg_emit_error("truncated reply for signature_fingerprints"
 						"output", type);
+				free(s);
 				return (EPKG_FATAL);
 			}
 			len = *(int *)p;
@@ -639,8 +641,9 @@ pkg_repo_archive_extract_check_archive(int fd, const char *file,
     const char *dest, struct pkg_repo *repo, int dest_fd)
 {
 	struct sig_cert *sc = NULL, *s, *stmp;
+	int ret, rc;
 
-	int ret, rc = EPKG_OK;
+	ret = rc = EPKG_OK;
 
 	if (pkg_repo_archive_extract_archive(fd, file, dest, repo, dest_fd, &sc)
 			!= EPKG_OK)
@@ -982,8 +985,12 @@ pkg_repo_fetch_meta(struct pkg_repo *repo, time_t *t)
 	}
 
 load_meta:
-	if ((rc = pkg_repo_meta_load(filepath, &nmeta)) != EPKG_OK)
+	if ((rc = pkg_repo_meta_load(filepath, &nmeta)) != EPKG_OK) {
+		if (map != NULL)
+			munmap(map, st.st_size);
+
 		return (rc);
+	}
 
 	if (repo->meta != NULL)
 		pkg_repo_meta_free(repo->meta);

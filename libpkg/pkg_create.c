@@ -270,8 +270,8 @@ pkg_create_from_manifest(const char *outdir, pkg_formats format,
 cleanup:
 	free(pkg);
 	pkg_manifest_keys_free(keys);
-	if (ret == EPKG_OK)
-		ret = packing_finish(pkg_archive);
+	packing_finish(pkg_archive);
+
 	return (ret);
 }
 
@@ -301,8 +301,6 @@ pkg_create_staged(const char *outdir, pkg_formats format, const char *rootdir,
 	regmatch_t	 pmatch[2];
 	size_t		 size;
 	struct pkg_manifest_key *keys = NULL;
-
-	mfd = -1;
 
 	pkg_debug(1, "Creating package from stage directory: '%s'", rootdir);
 
@@ -391,8 +389,8 @@ cleanup:
 	free(pkg);
 	free(manifest);
 	pkg_manifest_keys_free(keys);
-	if (ret == EPKG_OK)
-		ret = packing_finish(pkg_archive);
+	packing_finish(pkg_archive);
+
 	return (ret);
 }
 
@@ -415,7 +413,9 @@ pkg_create_installed(const char *outdir, pkg_formats format, struct pkg *pkg)
 
 	pkg_create_from_dir(pkg, NULL, pkg_archive);
 
-	return packing_finish(pkg_archive);
+	packing_finish(pkg_archive);
+
+	return (EPKG_OK);
 }
 
 static int64_t	count;

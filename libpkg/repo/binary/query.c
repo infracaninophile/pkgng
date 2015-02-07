@@ -128,7 +128,8 @@ pkg_repo_binary_query(struct pkg_repo *repo, const char *pattern, match_t match)
 	sbuf_cat(sql, " ORDER BY name;");
 	sbuf_finish(sql);
 
-	pkg_debug(4, "Pkgdb: running '%s' query for %s", sbuf_get(sql), pattern);
+	pkg_debug(4, "Pkgdb: running '%s' query for %s", sbuf_get(sql),
+	     pattern == NULL ? "all": pattern);
 	ret = sqlite3_prepare_v2(sqlite, sbuf_get(sql), sbuf_size(sql), &stmt, NULL);
 	if (ret != SQLITE_OK) {
 		ERROR_SQLITE(sqlite, sbuf_get(sql));
@@ -377,8 +378,10 @@ pkg_repo_binary_ensure_loaded(struct pkg_repo *repo,
 			return (EPKG_FATAL);
 
 		pkg_debug(1, "Binary> loading %s", path);
-		if (pkg_open(&cached, path, keys, PKG_OPEN_TRY) != EPKG_OK)
+		if (pkg_open(&cached, path, keys, PKG_OPEN_TRY) != EPKG_OK) {
+			pkg_free(cached);
 			return (EPKG_FATAL);
+		}
 
 		/* Now move required elements to the provided package */
 		pkg_list_free(pkg, PKG_FILES);

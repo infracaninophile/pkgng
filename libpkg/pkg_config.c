@@ -116,6 +116,12 @@ static struct config_entry c[] = {
 	},
 	{
 		PKG_BOOL,
+		"DEFAULT_ALWAYS_YES",
+		"NO",
+		"Default to 'yes' for all pkg(8) questions",
+	},
+	{
+		PKG_BOOL,
 		"ASSUME_ALWAYS_YES",
 		"NO",
 		"Answer 'yes' to all pkg(8) questions",
@@ -347,6 +353,12 @@ static struct config_entry c[] = {
 		"CONSERVATIVE_UPGRADE",
 		"NO",
 		"Prefer repos with higher priority during upgrade"
+	},
+	{
+		PKG_BOOL,
+		"PKG_CREATE_VERBOSE",
+		"NO",
+		"Enable verbose mode for 'pkg create'",
 	},
 };
 
@@ -1201,6 +1213,11 @@ pkg_repo_mirror_type(struct pkg_repo *r)
 	return (r->mirror_type);
 }
 
+unsigned int
+pkg_repo_priority(struct pkg_repo *r)
+{
+	return (r->priority);
+}
 
 /* Locate the repo by the file basename / database name */
 struct pkg_repo *

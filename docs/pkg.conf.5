@@ -15,7 +15,7 @@
 .\"     @(#)pkg.1
 .\" $FreeBSD$
 .\"
-.Dd February 1, 2015
+.Dd February 8, 2015
 .Dt PKG.CONF 5
 .Os
 .Sh NAME
@@ -72,6 +72,12 @@ a syntactically correct
 command line when substituted in and followed by any remaining tokens from
 the original command line.
 Default: not set.
+.It Cm DEFAULT_ALWAYS_YES: boolean
+When this option is enabled
+.Xr pkg 1
+will default to "yes" for all questions
+which require user confirmation before doing anything.
+Default: NO.
 .It Cm ASSUME_ALWAYS_YES: boolean
 When this option is enabled
 .Xr pkg 1
@@ -174,6 +180,14 @@ Default: NO.
 Specifies the cache directory for packages.
 Default:
 .Pa /var/cache/pkg
+.It Cm PKG_CREATE_VERBOSE: boolean
+When set to a
+.Sy true
+value, make
+.Xr pkg_create 8
+use verbose mode as standard.
+Default:
+.Sy false
 .It Cm PKG_DBDIR: string
 Specifies the directory to use for storing the package
 database files.

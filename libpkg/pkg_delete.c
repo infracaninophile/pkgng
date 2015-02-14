@@ -200,7 +200,7 @@ rmdir_p(struct pkgdb *db, struct pkg *pkg, char *dir, const char *prefix_r)
 	pkg_debug(1, "removing directory %s", fullpath);
 #ifdef HAVE_CHFLAGS
 	if (fstatat(pkg->rootfd, dir, &st, AT_SYMLINK_NOFOLLOW) != -1) {
-		if (st.st_flags & NOCHANGESFLAGS)
+		if (st.st_flags & NOCHANGESFLAGS) {
 #ifdef HAVE_CHFLAGSAT
 			/* Disable all flags*/
 			chflagsat(pkg->rootfd, dir, 0, AT_SYMLINK_NOFOLLOW);
@@ -211,6 +211,7 @@ rmdir_p(struct pkgdb *db, struct pkg *pkg, char *dir, const char *prefix_r)
 				close(fd);
 			}
 #endif
+		}
 	}
 #endif
 
@@ -302,7 +303,7 @@ pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force)
 
 #ifdef HAVE_CHFLAGS
 	if (fstatat(pkg->rootfd, path, &st, AT_SYMLINK_NOFOLLOW) != -1) {
-		if (st.st_flags & NOCHANGESFLAGS)
+		if (st.st_flags & NOCHANGESFLAGS) {
 #ifdef HAVE_CHFLAGSAT
 			chflagsat(pkg->rootfd, path,
 			    st.st_flags & ~NOCHANGESFLAGS,
@@ -314,6 +315,7 @@ pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force)
 				close(fd);
 			}
 #endif
+		}
 	}
 #endif
 	if (unlinkat(pkg->rootfd, path, 0) == -1) {

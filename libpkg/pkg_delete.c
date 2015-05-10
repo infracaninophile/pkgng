@@ -47,10 +47,10 @@
 #include "private/pkgdb.h"
 #include "private/utils.h"
 
-#if defined(__APPLE__)
-#define NOCHANGESFLAGS	(UF_IMMUTABLE | UF_APPEND | SF_IMMUTABLE | SF_APPEND)
-#else
+#if defined(UF_NOUNLINK)
 #define NOCHANGESFLAGS	(UF_IMMUTABLE | UF_APPEND | UF_NOUNLINK | SF_IMMUTABLE | SF_APPEND | SF_NOUNLINK)
+#else
+#define NOCHANGESFLAGS	(UF_IMMUTABLE | UF_APPEND | SF_IMMUTABLE | SF_APPEND)
 #endif
 
 int
@@ -273,6 +273,8 @@ pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force)
 	prefix_rel = pkg->prefix;
 	prefix_rel++;
 	len = strlen(prefix_rel);
+	while (prefix_rel[len - 1] == '/')
+		len--;
 
 	/* Regular files and links */
 	/* check sha256 */
@@ -318,6 +320,7 @@ pkg_delete_file(struct pkg *pkg, struct pkg_file *file, unsigned force)
 		}
 	}
 #endif
+	pkg_debug(1, "Deleting file: '%s'", path);
 	if (unlinkat(pkg->rootfd, path, 0) == -1) {
 		if (force < 2)
 			pkg_emit_errno("unlinkat", path);
@@ -375,6 +378,8 @@ pkg_delete_dir(struct pkg *pkg, struct pkg_dir *dir)
 	prefix_rel = pkg->prefix;
 	prefix_rel++;
 	len = strlen(prefix_rel);
+	while (prefix_rel[len - 1] == '/')
+		len--;
 
 	if ((strncmp(prefix_rel, path, len) == 0) && path[len] == '/') {
 		pkg_add_dir_to_del(pkg, NULL, path);

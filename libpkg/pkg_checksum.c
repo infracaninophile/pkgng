@@ -31,7 +31,7 @@
 
 struct pkg_checksum_entry {
 	const char *field;
-	const char *value;
+	char *value;
 	struct pkg_checksum_entry *next, *prev;
 };
 
@@ -109,6 +109,17 @@ static const struct _pkg_cksum_type {
 };
 
 static void
+pkg_checksum_free_entry(struct pkg_checksum_entry *e)
+{
+	if (e != NULL) {
+		if (e->value) {
+			free(e->value);
+		}
+		free(e);
+	}
+}
+
+static void
 pkg_checksum_add_entry(const char *key,
 	const char *value,
 	struct pkg_checksum_entry **entries)
@@ -122,7 +133,7 @@ pkg_checksum_add_entry(const char *key,
 	}
 
 	e->field = key;
-	e->value = value;
+	e->value = strdup(value);
 	DL_APPEND(*entries, e);
 }
 
@@ -169,6 +180,7 @@ pkg_checksum_generate(struct pkg *pkg, char *dest, size_t destlen,
 	struct pkg_user *user = NULL;
 	struct pkg_group *group = NULL;
 	struct pkg_dep *dep = NULL;
+	struct pkg_provide *p = NULL;
 	int i;
 
 	if (pkg == NULL || type >= PKG_HASH_TYPE_UNKNOWN ||
@@ -207,12 +219,21 @@ pkg_checksum_generate(struct pkg *pkg, char *dest, size_t destlen,
 		free(olduid);
 	}
 
+	while (pkg_provides(pkg, &p) == EPKG_OK) {
+		pkg_checksum_add_entry("provide", p->provide, &entries);
+	}
+
+	p = NULL;
+	while (pkg_requires(pkg, &p) == EPKG_OK) {
+		pkg_checksum_add_entry("require", p->provide, &entries);
+	}
+
 	/* Sort before hashing */
 	DL_SORT(entries, pkg_checksum_entry_cmp);
 
 	checksum_types[type].hfunc(entries, &bdigest, &blen);
 	if (blen == 0 || bdigest == NULL) {
-		LL_FREE(entries, free);
+		LL_FREE(entries, pkg_checksum_free_entry);
 		return (EPKG_FATAL);
 	}
 
@@ -229,7 +250,7 @@ pkg_checksum_generate(struct pkg *pkg, char *dest, size_t destlen,
 	}
 
 	free(bdigest);
-	LL_FREE(entries, free);
+	LL_FREE(entries, pkg_checksum_free_entry);
 
 	return (EPKG_OK);
 }

@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2011-2014 Baptiste Daroussin <bapt@FreeBSD.org>
+ * Copyright (c) 2011-2015 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
  * Copyright (c) 2013-2014 Vsevolod Stakhov <vsevolod@FreeBSD.org>
  * All rights reserved.
@@ -57,6 +57,7 @@
 #define PKG_SHLIBS_PROVIDED	-15
 #define PKG_CONFLICTS		-17
 #define PKG_PROVIDES		-18
+#define PKG_REQUIRES		-19
 
 static int pkg_string(struct pkg *, const ucl_object_t *, int);
 static int pkg_obj(struct pkg *, const ucl_object_t *, int);
@@ -105,6 +106,7 @@ static struct manifest_key {
 	{ "pkgsize",             PKG_PKGSIZE,             UCL_INT,    pkg_int},
 	{ "prefix",              PKG_PREFIX,              UCL_STRING, pkg_string},
 	{ "provides",            PKG_PROVIDES,            UCL_ARRAY,  pkg_array},
+	{ "requires",            PKG_REQUIRES,            UCL_ARRAY,  pkg_array},
 	{ "scripts",             PKG_SCRIPTS,             UCL_OBJECT, pkg_obj},
 	{ "shlibs",              PKG_SHLIBS_REQUIRED,     UCL_ARRAY,  pkg_array}, /* Backwards compat with 1.0.x packages */
 	{ "shlibs_provided",     PKG_SHLIBS_PROVIDED,     UCL_ARRAY,  pkg_array},
@@ -118,25 +120,23 @@ static struct manifest_key {
 	{ NULL, -99, -99, NULL}
 };
 
-struct dataparser {
-	uint16_t type;
-	int (*parse_data)(struct pkg *, const ucl_object_t *, int);
-	UT_hash_handle hh;
-};
+typedef int (*parse_data)(struct pkg *, const ucl_object_t *, int);
+KHASH_MAP_INIT_INT(dataparser, parse_data);
+typedef khash_t(dataparser) dataparser_t;
 
 struct pkg_manifest_key {
 	const char *key;
 	int type;
-	struct dataparser *parser;
+	dataparser_t *parser;
 	UT_hash_handle hh;
 };
 
 int
 pkg_manifest_keys_new(struct pkg_manifest_key **key)
 {
-	int i;
+	int i, absent;
 	struct pkg_manifest_key *k;
-	struct dataparser *dp;
+	khint_t h;
 
 	if (*key != NULL)
 		return (EPKG_OK);
@@ -147,15 +147,13 @@ pkg_manifest_keys_new(struct pkg_manifest_key **key)
 			k = calloc(1, sizeof(struct pkg_manifest_key));
 			k->key = manifest_keys[i].key;
 			k->type = manifest_keys[i].type;
+			k->parser = kh_init(dataparser);
 			HASH_ADD_KEYPTR(hh, *key, k->key, strlen(k->key), k);
 		}
-		HASH_FIND_UCLT(k->parser, &manifest_keys[i].valid_type, dp);
-		if (dp != NULL)
+		h = kh_put_dataparser(k->parser, manifest_keys[i].valid_type, &absent);
+		if (absent == 0)
 			continue;
-		dp = calloc(1, sizeof(struct dataparser));
-		dp->type = manifest_keys[i].valid_type;
-		dp->parse_data = manifest_keys[i].parse_data;
-		HASH_ADD_UCLT(k->parser, type, dp);
+		kh_value(k->parser, h) = manifest_keys[i].parse_data;
 	}
 
 	return (EPKG_OK);
@@ -163,8 +161,7 @@ pkg_manifest_keys_new(struct pkg_manifest_key **key)
 
 static void
 pmk_free(struct pkg_manifest_key *key) {
-	HASH_FREE(key->parser, free);
-
+	kh_destroy_dataparser(key->parser);
 	free(key);
 }
 
@@ -389,7 +386,7 @@ pkg_array(struct pkg *pkg, const ucl_object_t *obj, int attr)
 			break;
 		case PKG_DIRS:
 			if (cur->type == UCL_STRING)
-				pkg_adddir(pkg, ucl_object_tostring(cur), 1, false);
+				pkg_adddir(pkg, ucl_object_tostring(cur), false);
 			else if (cur->type == UCL_OBJECT)
 				pkg_obj(pkg, cur, attr);
 			else
@@ -424,6 +421,12 @@ pkg_array(struct pkg *pkg, const ucl_object_t *obj, int attr)
 				pkg_emit_error("Skipping malformed config file name");
 			else
 				pkg_addconfig_file(pkg, ucl_object_tostring(cur), NULL);
+			break;
+		case PKG_REQUIRES:
+			if (cur->type != UCL_STRING)
+				pkg_emit_error("Skipping malformed require name");
+			else
+				pkg_addrequire(pkg, ucl_object_tostring(cur));
 			break;
 		}
 	}
@@ -478,15 +481,12 @@ pkg_obj(struct pkg *pkg, const ucl_object_t *obj, int attr)
 		case PKG_DIRECTORIES:
 			if (cur->type == UCL_BOOLEAN) {
 				urldecode(key, &tmp);
-				pkg_adddir(pkg, sbuf_data(tmp), ucl_object_toboolean(cur), false);
+				pkg_adddir(pkg, sbuf_data(tmp), false);
 			} else if (cur->type == UCL_OBJECT) {
 				pkg_set_dirs_from_object(pkg, cur);
 			} else if (cur->type == UCL_STRING) {
 				urldecode(key, &tmp);
-				if (ucl_object_tostring(cur)[0] == 'y')
-					pkg_adddir(pkg, sbuf_data(tmp), 1, false);
-				else
-					pkg_adddir(pkg, sbuf_data(tmp), 0, false);
+				pkg_adddir(pkg, sbuf_data(tmp), false);
 			} else {
 				pkg_emit_error("Skipping malformed directories %s",
 				    key);
@@ -597,11 +597,12 @@ pkg_set_files_from_object(struct pkg *pkg, const ucl_object_t *obj)
 				perm = getmode(set, 0);
 		} else {
 			pkg_emit_error("Skipping unknown key for file(%s): %s",
-			    sbuf_data(fname), ucl_object_tostring(cur));
+			    sbuf_data(fname), key);
 		}
 	}
 
-	pkg_addfile_attr(pkg, sbuf_data(fname), sum, uname, gname, perm, false);
+	pkg_addfile_attr(pkg, sbuf_data(fname), sum, uname, gname, perm, 0,
+	    false);
 	sbuf_delete(fname);
 
 	return (EPKG_OK);
@@ -616,7 +617,6 @@ pkg_set_dirs_from_object(struct pkg *pkg, const ucl_object_t *obj)
 	const char *gname = NULL;
 	void *set;
 	mode_t perm = 0;
-	bool try = false;
 	struct sbuf *dirname = NULL;
 	const char *key, *okey;
 
@@ -640,14 +640,14 @@ pkg_set_dirs_from_object(struct pkg *pkg, const ucl_object_t *obj)
 			else
 				perm = getmode(set, 0);
 		} else if (!strcasecmp(key, "try") && cur->type == UCL_BOOLEAN) {
-				try = ucl_object_toint(cur);
+			/* ignore on purpose : compatibility*/
 		} else {
 			pkg_emit_error("Skipping unknown key for dir(%s): %s",
 			    sbuf_data(dirname), key);
 		}
 	}
 
-	pkg_adddir_attr(pkg, sbuf_data(dirname), uname, gname, perm, try, false);
+	pkg_adddir_attr(pkg, sbuf_data(dirname), uname, gname, perm, 0, false);
 	sbuf_delete(dirname);
 
 	return (EPKG_OK);
@@ -703,8 +703,9 @@ parse_manifest(struct pkg *pkg, struct pkg_manifest_key *keys, ucl_object_t *obj
 	const ucl_object_t *cur;
 	ucl_object_iter_t it = NULL;
 	struct pkg_manifest_key *selected_key;
-	struct dataparser *dp;
+	parse_data dp;
 	const char *key;
+	khint_t k;
 
 	while ((cur = ucl_iterate_object(obj, &it, true))) {
 		key = ucl_object_key(cur);
@@ -713,10 +714,11 @@ parse_manifest(struct pkg *pkg, struct pkg_manifest_key *keys, ucl_object_t *obj
 		pkg_debug(3, "Manifest: found key: '%s'", key);
 		HASH_FIND_STR(keys, key, selected_key);
 		if (selected_key != NULL) {
-			HASH_FIND_UCLT(selected_key->parser, &cur->type, dp);
-			if (dp != NULL) {
+			k = kh_get_dataparser(selected_key->parser, cur->type);
+			if (k != kh_end(selected_key->parser)) {
 				pkg_debug(3, "Manifest: key is valid");
-				dp->parse_data(pkg, cur, selected_key->type);
+				dp = kh_value(selected_key->parser, k);
+				dp(pkg, cur, selected_key->type);
 			} else {
 				pkg_emit_error("Skipping malformed key '%s'", key);
 			}
@@ -737,8 +739,8 @@ pkg_parse_manifest(struct pkg *pkg, char *buf, size_t len, struct pkg_manifest_k
 	ucl_object_iter_t it = NULL;
 	int rc;
 	struct pkg_manifest_key *sk;
-	struct dataparser *dp;
 	const char *key;
+	khint_t k;
 
 	assert(pkg != NULL);
 	assert(buf != NULL);
@@ -768,8 +770,8 @@ pkg_parse_manifest(struct pkg *pkg, char *buf, size_t len, struct pkg_manifest_k
 			continue;
 		HASH_FIND_STR(keys, key, sk);
 		if (sk != NULL) {
-			HASH_FIND_UCLT(sk->parser, &cur->type, dp);
-			if (dp == NULL) {
+			k = kh_get_dataparser(sk->parser, cur->type);
+			if (k == kh_end(sk->parser)) {
 				pkg_emit_error("Bad format in manifest for key:"
 				    " %s", key);
 				ucl_object_unref(obj);
@@ -831,8 +833,8 @@ pkg_parse_manifest_file(struct pkg *pkg, const char *file, struct pkg_manifest_k
 	ucl_object_iter_t it = NULL;
 	int rc;
 	struct pkg_manifest_key *sk;
-	struct dataparser *dp;
 	const char *key;
+	khint_t k;
 
 	assert(pkg != NULL);
 	assert(file != NULL);
@@ -862,8 +864,8 @@ pkg_parse_manifest_file(struct pkg *pkg, const char *file, struct pkg_manifest_k
 			continue;
 		HASH_FIND_STR(keys, key, sk);
 		if (sk != NULL) {
-			HASH_FIND_UCLT(sk->parser, &cur->type, dp);
-			if (dp == NULL) {
+			k = kh_get_dataparser(sk->parser, cur->type);
+			if (k == kh_end(sk->parser)) {
 				pkg_emit_error("Bad format in manifest for key:"
 				    " %s", key);
 				ucl_object_unref(obj);
@@ -925,6 +927,7 @@ pkg_emit_object(struct pkg *pkg, short flags)
 	struct pkg_shlib	*shlib    = NULL;
 	struct pkg_conflict	*conflict = NULL;
 	struct pkg_provide	*provide  = NULL;
+	struct pkg_provide	*require  = NULL;
 	struct pkg_config_file	*cf       = NULL;
 	struct sbuf		*tmpsbuf  = NULL;
 	int i;
@@ -1085,6 +1088,16 @@ pkg_emit_object(struct pkg *pkg, short flags)
 	}
 	if (seq)
 		ucl_object_insert_key(top, seq, "provides", 8, false);
+
+	pkg_debug(4, "Emitting requires");
+	seq = NULL;
+	while (pkg_requires(pkg, &require) == EPKG_OK) {
+		if (seq == NULL)
+			seq = ucl_object_typed_new(UCL_ARRAY);
+		ucl_array_append(seq, ucl_object_fromstring(require->provide));
+	}
+	if (seq)
+		ucl_object_insert_key(top, seq, "requires", 8, false);
 
 	pkg_debug(4, "Emitting options");
 	map = NULL;

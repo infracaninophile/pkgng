@@ -125,6 +125,7 @@ global:
 	pkg_repos;
 	pkg_repos_activated_count;
 	pkg_repos_total_count;
+	pkg_requires;
 	pkg_reset;
 	pkg_sbuf_printf;
 	pkg_sbuf_vprintf;
@@ -133,6 +134,7 @@ global:
 	pkg_set_debug_level;
 	pkg_set_from_file;
 	pkg_set_from_fileat;
+	pkg_set_rootdir;
 	pkg_shlibs_provided;
 	pkg_shlibs_required;
 	pkg_shutdown;
@@ -180,6 +182,8 @@ global:
 	pkgdb_open;
 	pkgdb_open_all;
 	pkgdb_query;
+	pkgdb_query_provide;
+	pkgdb_query_require;
 	pkgdb_query_shlib_provide;
 	pkgdb_query_shlib_require;
 	pkgdb_query_which;

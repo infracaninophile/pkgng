@@ -74,21 +74,14 @@ pkg_repo_binary_get_cached_name(struct pkg_repo *repo, struct pkg *pkg,
 
 	if (ext != NULL) {
 		/*
-		 * XXX:
-		 * This code tries to skip refetching but it should be removed as soon
-		 * as we transfer to new scheme.
-		 */
-		pkg_snprintf(dest, destlen, "%S/%n-%v-%z",
-				cachedir, pkg, pkg, pkg);
-		if (stat (dest, &st) != -1 || pkg->pkgsize != st.st_size)
-			return (EPKG_FATAL);
-
-		/*
 		 * The real naming scheme:
 		 * <cachedir>/<name>-<version>-<checksum>.txz
 		 */
 		pkg_snprintf(dest, destlen, "%S/%n-%v-%z%S",
 				cachedir, pkg, pkg, pkg, ext);
+		if (stat (dest, &st) == -1 || pkg->pkgsize != st.st_size)
+			return (EPKG_FATAL);
+
 	}
 	else {
 		pkg_snprintf(dest, destlen, "%S/%n-%v-%z",
@@ -143,6 +136,7 @@ pkg_repo_binary_try_fetch(struct pkg_repo *repo, struct pkg *pkg,
 	struct stat st;
 	char *path = NULL;
 	const char *packagesite = NULL;
+	ssize_t offset = -1;
 
 	int retcode = EPKG_OK;
 
@@ -163,8 +157,15 @@ pkg_repo_binary_try_fetch(struct pkg_repo *repo, struct pkg *pkg,
 
 	/* If it is already in the local cachedir, dont bother to
 	 * download it */
-	if (access(dest, F_OK) == 0)
-		goto checksum;
+	if (stat(dest, &st) == 0) {
+		/* try to resume */
+		if (pkg->pkgsize > st.st_size) {
+			offset = st.st_size;
+			pkg_debug(1, "Resuming fetch");
+		} else {
+			goto checksum;
+		}
+	}
 
 	/* Create the dirs in cachedir */
 	dir = strdup(dest);
@@ -200,7 +201,7 @@ pkg_repo_binary_try_fetch(struct pkg_repo *repo, struct pkg *pkg,
 		return (EPKG_OK);
 	}
 
-	retcode = pkg_fetch_file(repo, url, dest, 0);
+	retcode = pkg_fetch_file(repo, url, dest, 0, offset, pkg->pkgsize);
 	fetched = 1;
 
 	if (retcode != EPKG_OK)

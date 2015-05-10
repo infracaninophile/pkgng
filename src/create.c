@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2011-2012 Baptiste Daroussin <bapt@FreeBSD.org>
+ * Copyright (c) 2011-2015 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
  * Copyright (c) 2011 Will Andrews <will@FreeBSD.org>
  * Copyright (c) 2015 Matthew Seaman <matthew@FreeBSD.org>
@@ -60,13 +60,13 @@ STAILQ_HEAD(pkg_head, pkg_entry);
 void
 usage_create(void)
 {
-	fprintf(stderr, "Usage: pkg create [-Onq] [-f format] [-o outdir] "
+	fprintf(stderr, "Usage: pkg create [-Onqv] [-f format] [-o outdir] "
 		"[-p plist] [-r rootdir] -m metadatadir\n");
-	fprintf(stderr, "Usage: pkg create [-Onq] [-f format] [-o outdir] "
+	fprintf(stderr, "Usage: pkg create [-Onqv] [-f format] [-o outdir] "
 		"[-r rootdir] -M manifest\n");
-	fprintf(stderr, "       pkg create [-Ognqx] [-f format] [-o outdir] "
+	fprintf(stderr, "       pkg create [-Ognqvx] [-f format] [-o outdir] "
 		"[-r rootdir] pkg-name ...\n");
-	fprintf(stderr, "       pkg create [-Onq] [-f format] [-o outdir] "
+	fprintf(stderr, "       pkg create [-Onqv] [-f format] [-o outdir] "
 		"[-r rootdir] -a\n\n");
 	fprintf(stderr, "For more information see 'pkg help create'.\n");
 }
@@ -83,6 +83,7 @@ pkg_create_matches(int argc, char **argv, match_t match, pkg_formats fmt,
 	    PKG_LOAD_CATEGORIES | PKG_LOAD_DIRS | PKG_LOAD_SCRIPTS |
 	    PKG_LOAD_OPTIONS | PKG_LOAD_LICENSES |
 	    PKG_LOAD_USERS | PKG_LOAD_GROUPS | PKG_LOAD_SHLIBS_REQUIRED |
+	    PKG_LOAD_PROVIDES | PKG_LOAD_REQUIRES |
 	    PKG_LOAD_SHLIBS_PROVIDED | PKG_LOAD_ANNOTATIONS;
 	struct pkg_head head = STAILQ_HEAD_INITIALIZER(head);
 	struct pkg_entry *e = NULL;
@@ -278,7 +279,8 @@ exec_create(int argc, char **argv)
 	}
 
 	if (metadatadir == NULL && manifest == NULL && rootdir != NULL) {
-		warnx("Do not specify a rootdir when creating a package from an installed package");
+		warnx("Do not specify a rootdir without also specifying "
+		    "either a metadatadir or manifest");
 		usage_create();
 		return (EX_USAGE);
 	}
@@ -313,7 +315,7 @@ exec_create(int argc, char **argv)
 		    plist) == EPKG_OK ? EX_OK : EX_SOFTWARE);
 	} else  { /* (manifest != NULL) */
 		return (pkg_create_from_manifest(outdir, fmt, rootdir,
-		    manifest) == EPKG_OK ? EX_OK : EX_SOFTWARE);
+		    manifest, plist) == EPKG_OK ? EX_OK : EX_SOFTWARE);
 	}
 }
 

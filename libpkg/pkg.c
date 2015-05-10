@@ -114,6 +114,7 @@ pkg_reset(struct pkg *pkg, pkg_t type)
 	pkg_list_free(pkg, PKG_SHLIBS_REQUIRED);
 	pkg_list_free(pkg, PKG_SHLIBS_PROVIDED);
 	pkg_list_free(pkg, PKG_PROVIDES);
+	pkg_list_free(pkg, PKG_REQUIRES);
 	if (pkg->rootfd != -1)
 		close(pkg->rootfd);
 	pkg->rootfd = -1;
@@ -159,6 +160,8 @@ pkg_free(struct pkg *pkg)
 	pkg_list_free(pkg, PKG_GROUPS);
 	pkg_list_free(pkg, PKG_SHLIBS_REQUIRED);
 	pkg_list_free(pkg, PKG_SHLIBS_PROVIDED);
+	pkg_list_free(pkg, PKG_PROVIDES);
+	pkg_list_free(pkg, PKG_REQUIRES);
 
 	LL_FREE(pkg->categories, pkg_strel_free);
 	LL_FREE(pkg->licenses, pkg_strel_free);
@@ -572,6 +575,7 @@ pkg_set_from_fileat(int fd, struct pkg *pkg, pkg_attr attr, const char *path,
     bool trimcr)
 {
 	char *buf = NULL;
+	char *cp;
 	off_t size = 0;
 	int ret = EPKG_OK;
 
@@ -581,8 +585,13 @@ pkg_set_from_fileat(int fd, struct pkg *pkg, pkg_attr attr, const char *path,
 	if ((ret = file_to_bufferat(fd, path, &buf, &size)) !=  EPKG_OK)
 		return (ret);
 
-	while (trimcr && buf[strlen(buf) - 1] == '\n')
-		buf[strlen(buf) - 1] = '\0';
+	if (trimcr) {
+		cp = buf + strlen(buf) - 1;
+		while (cp > buf && *cp == '\n') {
+			*cp = 0;
+			cp--;
+		}
+	}
 
 	ret = pkg_set(pkg, attr, buf);
 
@@ -595,6 +604,7 @@ int
 pkg_set_from_file(struct pkg *pkg, pkg_attr attr, const char *path, bool trimcr)
 {
 	char *buf = NULL;
+	char *cp;
 	off_t size = 0;
 	int ret = EPKG_OK;
 
@@ -604,8 +614,13 @@ pkg_set_from_file(struct pkg *pkg, pkg_attr attr, const char *path, bool trimcr)
 	if ((ret = file_to_buffer(path, &buf, &size)) !=  EPKG_OK)
 		return (ret);
 
-	while (trimcr && buf[strlen(buf) - 1] == '\n')
-		buf[strlen(buf) - 1] = '\0';
+	if (trimcr) {
+		cp = buf + strlen(buf) - 1;
+		while (cp > buf && *cp == '\n') {
+			*cp = 0;
+			cp--;
+		}
+	}
 
 	ret = pkg_set(pkg, attr, buf);
 
@@ -708,6 +723,14 @@ pkg_provides(const struct pkg *pkg, struct pkg_provide **c)
 	assert(pkg != NULL);
 
 	HASH_NEXT(pkg->provides, (*c));
+}
+
+int
+pkg_requires(const struct pkg *pkg, struct pkg_provide **c)
+{
+	assert(pkg != NULL);
+
+	HASH_NEXT(pkg->requires, (*c));
 }
 
 int
@@ -851,11 +874,13 @@ pkg_addrdep(struct pkg *pkg, const char *name, const char *origin, const char *v
 int
 pkg_addfile(struct pkg *pkg, const char *path, const char *sha256, bool check_duplicates)
 {
-	return (pkg_addfile_attr(pkg, path, sha256, NULL, NULL, 0, check_duplicates));
+	return (pkg_addfile_attr(pkg, path, sha256, NULL, NULL, 0, 0, check_duplicates));
 }
 
 int
-pkg_addfile_attr(struct pkg *pkg, const char *path, const char *sha256, const char *uname, const char *gname, mode_t perm, bool check_duplicates)
+pkg_addfile_attr(struct pkg *pkg, const char *path, const char *sha256,
+    const char *uname, const char *gname, mode_t perm, u_long fflags,
+    bool check_duplicates)
 {
 	struct pkg_file *f = NULL;
 	char abspath[MAXPATHLEN];
@@ -893,6 +918,9 @@ pkg_addfile_attr(struct pkg *pkg, const char *path, const char *sha256, const ch
 
 	if (perm != 0)
 		f->perm = perm;
+
+	if (fflags != 0)
+		f->fflags = fflags;
 
 	HASH_ADD_STR(pkg->files, path, f);
 
@@ -957,13 +985,14 @@ pkg_strel_add(struct pkg_strel **list, const char *val, const char *title)
 }
 
 int
-pkg_adddir(struct pkg *pkg, const char *path, bool try, bool check_duplicates)
+pkg_adddir(struct pkg *pkg, const char *path, bool check_duplicates)
 {
-	return(pkg_adddir_attr(pkg, path, NULL, NULL, 0, try, check_duplicates));
+	return(pkg_adddir_attr(pkg, path, NULL, NULL, 0, 0, check_duplicates));
 }
 
 int
-pkg_adddir_attr(struct pkg *pkg, const char *path, const char *uname, const char *gname, mode_t perm, bool try __unused, bool check_duplicates)
+pkg_adddir_attr(struct pkg *pkg, const char *path, const char *uname,
+    const char *gname, mode_t perm, u_long fflags, bool check_duplicates)
 {
 	struct pkg_dir *d = NULL;
 	char abspath[MAXPATHLEN];
@@ -997,6 +1026,9 @@ pkg_adddir_attr(struct pkg *pkg, const char *path, const char *uname, const char
 
 	if (perm != 0)
 		d->perm = perm;
+
+	if (fflags != 0)
+		d->fflags = fflags;
 
 	HASH_ADD_STR(pkg->dirs, path, d);
 
@@ -1305,7 +1337,7 @@ pkg_addshlib_provided(struct pkg *pkg, const char *name)
 
 	HASH_ADD_KEYPTR(hh, pkg->shlibs_provided, s->name, strlen(s->name), s);
 
-	pkg_debug(3, "added shlib provide %s for %s", pkg->name, pkg->origin);
+	pkg_debug(3, "added shlib provide %s for %s", name, pkg->name);
 
 	return (EPKG_OK);
 }
@@ -1328,6 +1360,27 @@ pkg_addconflict(struct pkg *pkg, const char *uniqueid)
 	pkg_debug(3, "Pkg: add a new conflict origin: %s, with %s", pkg->uid, uniqueid);
 
 	HASH_ADD_KEYPTR(hh, pkg->conflicts, c->uid, strlen(c->uid), c);
+
+	return (EPKG_OK);
+}
+
+int
+pkg_addrequire(struct pkg *pkg, const char *name)
+{
+	struct pkg_provide *p = NULL;
+
+	assert(pkg != NULL);
+	assert(name != NULL && name[0] != '\0');
+
+	HASH_FIND_STR(pkg->requires, __DECONST(char *, name), p);
+	/* silently ignore duplicates in case of conflicts */
+	if (p != NULL)
+		return (EPKG_OK);
+
+	pkg_provide_new(&p);
+	p->provide = strdup(name);
+
+	HASH_ADD_KEYPTR(hh, pkg->requires, p->provide, strlen(p->provide), p);
 
 	return (EPKG_OK);
 }
@@ -1422,6 +1475,8 @@ pkg_list_count(const struct pkg *pkg, pkg_list list)
 		return (HASH_COUNT(pkg->conflicts));
 	case PKG_PROVIDES:
 		return (HASH_COUNT(pkg->provides));
+	case PKG_REQUIRES:
+		return (HASH_COUNT(pkg->requires));
 	case PKG_CONFIG_FILES:
 		return (HASH_COUNT(pkg->config_files));
 	}
@@ -1477,6 +1532,10 @@ pkg_list_free(struct pkg *pkg, pkg_list list)  {
 	case PKG_PROVIDES:
 		HASH_FREE(pkg->provides, pkg_provide_free);
 		pkg->flags &= ~PKG_LOAD_PROVIDES;
+		break;
+	case PKG_REQUIRES:
+		HASH_FREE(pkg->requires, pkg_provide_free);
+		pkg->flags &= ~PKG_LOAD_REQUIRES;
 		break;
 	}
 }
@@ -1683,14 +1742,14 @@ pkg_copy_tree(struct pkg *pkg, const char *src, const char *dest)
 		snprintf(spath, sizeof(spath), "%s%s", src, dir->path);
 		snprintf(dpath, sizeof(dpath), "%s%s", dest, dir->path);
 		packing_append_file_attr(pack, spath, dpath,
-		    dir->uname, dir->gname, dir->perm);
+		    dir->uname, dir->gname, dir->perm, dir->fflags);
 	}
 
 	while (pkg_files(pkg, &file) == EPKG_OK) {
 		snprintf(spath, sizeof(spath), "%s%s", src, file->path);
 		snprintf(dpath, sizeof(dpath), "%s%s", dest, file->path);
 		packing_append_file_attr(pack, spath, dpath,
-		    file->uname, file->gname, file->perm);
+		    file->uname, file->gname, file->perm, file->fflags);
 	}
 
 	packing_finish(pack);
@@ -1737,13 +1796,14 @@ int
 pkg_recompute(struct pkgdb *db, struct pkg *pkg)
 {
 	struct pkg_file *f = NULL;
-	struct hardlinks *hl = NULL;
+	hardlinks_t *hl = NULL;
 	int64_t flatsize = 0;
 	struct stat st;
 	bool regular = false;
 	char sha256[SHA256_DIGEST_LENGTH * 2 + 1];
 	int rc = EPKG_OK;
 
+	hl = kh_init_hardlinks();
 	while (pkg_files(pkg, &f) == EPKG_OK) {
 		if (lstat(f->path, &st) == 0) {
 			regular = true;
@@ -1762,7 +1822,7 @@ pkg_recompute(struct pkgdb *db, struct pkg *pkg)
 			}
 
 			if (st.st_nlink > 1)
-				regular = !check_for_hardlink(&hl, &st);
+				regular = !check_for_hardlink(hl, &st);
 
 			if (regular)
 				flatsize += st.st_size;
@@ -1770,7 +1830,7 @@ pkg_recompute(struct pkgdb *db, struct pkg *pkg)
 		if (strcmp(sha256, f->sum) != 0)
 			pkgdb_file_set_cksum(db, f, sha256);
 	}
-	HASH_FREE(hl, free);
+	kh_destroy_hardlinks(hl);
 
 	if (flatsize != pkg->flatsize)
 		pkg->flatsize = flatsize;
@@ -1875,6 +1935,8 @@ pkg_open_root_fd(struct pkg *pkg)
 		return (EPKG_OK);
 
 	path = pkg_kv_get(&pkg->annotations, "relocated");
+	if (pkg_rootdir != NULL)
+		path = pkg_rootdir;
 	if (path == NULL)
 		path = "/";
 

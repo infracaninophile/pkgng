@@ -32,11 +32,12 @@ PUBLIC_INCS=	-DTESTING \
 		-I$(top_srcdir)/compat \
 		-I$(top_srcdir)/libpkg \
 		-I/usr/local/include
-PRIVATE_INCS=	$(PUBLIC_INCS) \
-		-I$(top_srcdir)/external/libsbuf \
+PRIVATE_INCS=	-I$(top_srcdir)/external/libsbuf \
 		-I$(top_srcdir)/external/sqlite \
 		-I$(top_srcdir)/external/uthash \
-		-I$(top_srcdir)/external/libucl/include
+		-I$(top_srcdir)/external/libucl/include \
+		-I$(top_srcdir)/external/libucl/klib \
+		$(PUBLIC_INCS)
 
 pkg_printf_SOURCES=	lib/pkg_printf_test.c \
 			lib/pkg_printf.c
@@ -65,14 +66,28 @@ EXTRA_DIST=	frontend/png.uclin \
 		frontend/sqlite3.uclin \
 		Kyuafile \
 		frontend/Kyuafile \
+		frontend/001sanity.shin \
+		frontend/add.shin \
+		frontend/alias.shin \
 		frontend/annotate.shin \
-		frontend/pkg.shin \
-		frontend/search.shin \
-		frontend/version.shin \
-		frontend/test_environment.shin \
-		frontend/register.shin \
+		frontend/conflicts.shin \
+		frontend/conflicts-multirepo.shin \
+		frontend/create.shin \
+		frontend/delete.shin \
+		frontend/lock.shin \
 		frontend/packagesplit.shin \
-		frontend/lock.shin
+		frontend/php-pr.shin \
+		frontend/pkg.shin \
+		frontend/query.shin \
+		frontend/register.shin \
+		frontend/repo.shin \
+		frontend/requires.shin \
+		frontend/rootdir.shin \
+		frontend/rubypuppet.shin \
+		frontend/search.shin \
+		frontend/set.shin \
+		frontend/test_environment.shin \
+		frontend/version.shin
 
 TESTS =
 tests_programs=	pkg_printf \
@@ -83,12 +98,26 @@ tests_programs=	pkg_printf \
 EXTRA_PROGRAMS=	$(tests_programs)
 check_PROGRAMS=	$(tests_programs)
 check_SCRIPTS=	frontend/pkg.sh \
+		frontend/add.sh \
+		frontend/001sanity.sh \
+		frontend/alias.sh \
 		frontend/annotate.sh \
-		frontend/search.sh \
-		frontend/version.sh \
-		frontend/register.sh \
-		frontend/packagesplit.sh \
+		frontend/conflicts.sh \
+		frontend/conflicts-multirepo.sh \
+		frontend/create.sh \
+		frontend/delete.sh \
 		frontend/lock.sh \
+		frontend/packagesplit.sh \
+		frontend/php-pr.sh \
+		frontend/query.sh \
+		frontend/register.sh \
+		frontend/repo.sh \
+		frontend/requires.sh \
+		frontend/rootdir.sh \
+		frontend/rubypuppet.sh \
+		frontend/search.sh \
+		frontend/set.sh \
+		frontend/version.sh \
 		frontend/test_environment.sh \
 		frontend/png.ucl \
 		frontend/sqlite3.ucl

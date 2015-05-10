@@ -1,5 +1,5 @@
 m4_define([maj_ver], [1])
-m4_define([med_ver], [4])
+m4_define([med_ver], [5])
 m4_define([min_ver], [99])
 m4_define([api_ver], [m4_eval(maj_ver * 1000000 + med_ver * 1000 + min_ver)])
 m4_define([dev_ver], m4_expand([m4_normalize(m4_sinclude([dev_version.m4]))]))
@@ -97,16 +97,11 @@ CFLAGS="$CFLAGS $OS_CFLAGS"
 AC_CHECK_HEADERS_ONCE([machine/endian.h])
 AC_CHECK_HEADERS_ONCE([endian.h])
 AC_CHECK_HEADERS_ONCE([sys/endian.h])
-AC_CHECK_HEADERS_ONCE([fcntl.h])
 AC_CHECK_HEADERS_ONCE([dlfcn.h])
-AC_CHECK_HEADERS_ONCE([memory.h])
 AC_CHECK_HEADERS_ONCE([stdlib.h])
 AC_CHECK_HEADERS_ONCE([string.h])
 AC_CHECK_HEADERS_ONCE([memory.h])
 AC_CHECK_HEADERS_ONCE([inttypes.h])
-AC_CHECK_HEADERS_ONCE([unistd.h])
-AC_CHECK_HEADERS_ONCE([dlfcn.h])
-AC_CHECK_HEADERS_ONCE([fcntl.h])
 
 AC_CHECK_HEADERS_ONCE([sys/types.h])
 AC_CHECK_HEADERS_ONCE([sys/stat.h])
@@ -114,13 +109,10 @@ AC_CHECK_HEADERS_ONCE([sys/param.h])
 AC_CHECK_HEADERS_ONCE([sys/mman.h])
 AC_CHECK_HEADERS_ONCE([sys/elf_common.h])
 AC_CHECK_HEADERS_ONCE([link.h])
-AC_CHECK_HEADERS_ONCE([stdlib.h])
 AC_CHECK_HEADERS_ONCE([stddef.h])
 AC_CHECK_HEADERS_ONCE([stdarg.h])
 AC_CHECK_HEADERS_ONCE([stdbool.h])
 AC_CHECK_HEADERS_ONCE([stdint.h])
-AC_CHECK_HEADERS_ONCE([string.h])
-AC_CHECK_HEADERS_ONCE([unistd.h])
 AC_CHECK_HEADERS_ONCE([ctype.h])
 AC_CHECK_HEADERS_ONCE([errno.h])
 AC_CHECK_HEADERS_ONCE([limits.h])
@@ -154,6 +146,7 @@ AC_CHECK_HEADER([regex.h], [
 	[AC_MSG_ERROR([unable to find the regex.h header])],
 	[#include <sys/types.h>])
 
+AC_CHECK_FUNCS_ONCE([strtofflags])
 AC_CHECK_FUNCS_ONCE([posix_fallocate])
 AC_CHECK_FUNCS_ONCE([usleep])
 AC_CHECK_FUNCS_ONCE([localtime_r])
@@ -202,11 +195,36 @@ AC_CHECK_MEMBERS([struct in6_addr.s6_addr32,
 #endif
 ])
 
+AC_MSG_CHECKING(for IPv6 support)
+AC_CACHE_VAL(ac_cv_ipv6,
+      AC_TRY_RUN([
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+	/* Make sure the definitions for AF_INET6 and struct sockaddr_in6
+	 * are defined, and that we can actually create an IPv6 TCP socket.
+	 */
+	main()
+	{
+		int fd;
+		struct sockaddr_in6 foo;
+		fd = socket(AF_INET6, SOCK_STREAM, 0);
+		exit(fd >= 0 ? 0 : 1);
+	}],
+	ac_cv_ipv6=yes,
+	ac_cv_ipv6=no,
+	ac_cv_ipv6=no))
+AC_MSG_RESULT($ac_cv_ipv6)
+if test $ac_cv_ipv6 = yes ; then
+	CFLAGS="${CFLAGS} -DINET6=1"
+	AC_DEFINE(INET6,1,"check if system supports IPV6")
+fi
+
 PKG_PROG_PKG_CONFIG
 
 AC_DEFUN([AC_PROG_GIT], [AC_CHECK_PROG(GITBIN,git,yes)])
 AC_PROG_GIT
-if test x"${GITBIN}" == x"yes" ; then
+if test x"${GITBIN}" = x"yes" ; then
 	AC_MSG_CHECKING([for git head])
 	if test -d "${GIT_DIR:-${ac_top_srcdir:-./}/.git}" ; then
 		GIT_HEAD=`git rev-parse --short HEAD`

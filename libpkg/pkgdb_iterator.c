@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2011-2012 Baptiste Daroussin <bapt@FreeBSD.org>
+ * Copyright (c) 2011-2015 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
  * Copyright (c) 2011 Will Andrews <will@FreeBSD.org>
  * Copyright (c) 2011 Philippe Pepiot <phil@philpep.org>
@@ -386,8 +386,7 @@ pkgdb_load_dirs(sqlite3 *sqlite, struct pkg *pkg)
 	sqlite3_bind_int64(stmt, 1, pkg->id);
 
 	while ((ret = sqlite3_step(stmt)) == SQLITE_ROW) {
-		pkg_adddir(pkg, sqlite3_column_text(stmt, 0),
-		    sqlite3_column_int(stmt, 1), false);
+		pkg_adddir(pkg, sqlite3_column_text(stmt, 0), false);
 	}
 
 	sqlite3_finalize(stmt);
@@ -665,13 +664,31 @@ pkgdb_load_provides(sqlite3 *sqlite, struct pkg *pkg)
 {
 	const char	sql[] = ""
 		"SELECT provide"
-		"  FROM provides"
-		"  WHERE package_id = ?1";
+		"  FROM pkg_provides, provides AS s"
+		"  WHERE package_id = ?1"
+		"    AND provide_id = s.id"
+		"  ORDER by provide DESC";
 
 	assert(pkg != NULL);
 
 	return (load_val(sqlite, pkg, sql, PKG_LOAD_PROVIDES,
-			pkg_addconflict, PKG_PROVIDES));
+	    pkg_addprovide, PKG_PROVIDES));
+}
+
+static int
+pkgdb_load_requires(sqlite3 *sqlite, struct pkg *pkg)
+{
+	const char	sql[] = ""
+		"SELECT require"
+		"  FROM pkg_requires, requires AS s"
+		"  WHERE package_id = ?1"
+		"    AND require_id = s.id"
+		"  ORDER by require DESC";
+
+	assert(pkg != NULL);
+
+	return (load_val(sqlite, pkg, sql, PKG_LOAD_REQUIRES,
+	    pkg_addrequire, PKG_REQUIRES));
 }
 
 static void
@@ -823,6 +840,7 @@ static struct load_on_flag {
 	{ PKG_LOAD_ANNOTATIONS,		pkgdb_load_annotations },
 	{ PKG_LOAD_CONFLICTS,		pkgdb_load_conflicts },
 	{ PKG_LOAD_PROVIDES,		pkgdb_load_provides },
+	{ PKG_LOAD_REQUIRES,		pkgdb_load_requires },
 	{ -1,			        NULL }
 };
 

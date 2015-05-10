@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2011-2014 Baptiste Daroussin <bapt@FreeBSD.org>
+ * Copyright (c) 2011-2015 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
  * Copyright (c) 2011 Will Andrews <will@FreeBSD.org>
  * Copyright (c) 2011 Philippe Pepiot <phil@philpep.org>
@@ -31,6 +31,11 @@
 
 #ifndef _PKG_H
 #define _PKG_H
+
+#ifdef __cplusplus
+extern "C" {
+#define restrict
+#endif
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -66,6 +71,10 @@
 /* Not supported under DragonFly */
 #ifdef __DragonFly__
 #undef OSMAJOR
+#endif
+
+#ifdef __NetBSD_Version__
+#define OSMAJOR __NetBSD_Version__
 #endif
 
 #ifndef __DECONST
@@ -320,6 +329,7 @@ typedef enum {
 	PKG_CONFLICTS,
 	PKG_PROVIDES,
 	PKG_CONFIG_FILES,
+	PKG_REQUIRES,
 } pkg_list;
 
 typedef enum {
@@ -656,6 +666,7 @@ int pkg_conflicts(const struct pkg *pkg, struct pkg_conflict **conflict);
  * @return An error code
  */
 int pkg_provides(const struct pkg *pkg, struct pkg_provide **provide);
+int pkg_requires(const struct pkg *pkg, struct pkg_provide **require);
 
 /**
  * Iterates over the config files registered in the package.
@@ -707,6 +718,7 @@ int pkg_set_from_fileat(int fd, struct pkg *pkg, pkg_attr attr, const char *file
  * @return Previous debug level.
  */
 int64_t pkg_set_debug_level(int64_t debug_level);
+void pkg_set_rootdir(const char *rootdir);
 
 /**
  * Allocate a new struct pkg and add it to the deps of pkg.
@@ -912,6 +924,8 @@ struct pkgdb_it * pkgdb_query_which(struct pkgdb *db, const char *path, bool glo
 
 struct pkgdb_it * pkgdb_query_shlib_require(struct pkgdb *db, const char *shlib);
 struct pkgdb_it * pkgdb_query_shlib_provide(struct pkgdb *db, const char *shlib);
+struct pkgdb_it * pkgdb_query_require(struct pkgdb *db, const char *req);
+struct pkgdb_it * pkgdb_query_provide(struct pkgdb *db, const char *req);
 
 struct pkgdb_it * pkgdb_rquery_provide(struct pkgdb *db,
     const char *provide, const char *repo);
@@ -945,6 +959,7 @@ int pkgdb_delete_annotation(struct pkgdb *db, struct pkg *pkg,
 #define PKG_LOAD_ANNOTATIONS		(1U << 12)
 #define PKG_LOAD_CONFLICTS		(1U << 13)
 #define PKG_LOAD_PROVIDES		(1U << 14)
+#define PKG_LOAD_REQUIRES		(1U << 15)
 /* Make sure new PKG_LOAD don't conflict with PKG_CONTAINS_* */
 
 /**
@@ -1108,7 +1123,8 @@ int pkg_create_installed(const char *, pkg_formats, struct pkg *);
  * Create package from stage install using just the manifest --
  * no old pkg_tools compatibility stuff
  */
-int pkg_create_from_manifest(const char *, pkg_formats, const char *, const char *);
+int pkg_create_from_manifest(const char *, pkg_formats, const char *,
+    const char *, const char *);
 
 /**
  * Create package from stage install with a metadata directory
@@ -1184,7 +1200,8 @@ pkg_change_t pkg_version_change_between(const struct pkg * pkg1, const struct pk
  * Fetch a file.
  * @return An error code.
  */
-int pkg_fetch_file(struct pkg_repo *repo, const char *url, char *dest, time_t t);
+int pkg_fetch_file(struct pkg_repo *repo, const char *url, char *dest, time_t t,
+    ssize_t offset, int64_t size);
 /**
  * Fetch a file to temporary destination
  */
@@ -1315,12 +1332,12 @@ struct pkg_event {
 			struct pkg *pkg;
 		} e_deinstall_finished;
 		struct {
-			struct pkg *new;
-			struct pkg *old;
+			struct pkg *n;
+			struct pkg *o;
 		} e_upgrade_begin;
 		struct {
-			struct pkg *new;
-			struct pkg *old;
+			struct pkg *n;
+			struct pkg *o;
 		} e_upgrade_finished;
 		struct {
 			struct pkg *pkg;
@@ -1659,4 +1676,7 @@ int pkg_add_port(struct pkgdb *db, struct pkg *pkg, const char *root, \
     const char *locationn, bool testing);
 char *pkg_absolutepath(const char *src, char *dest, size_t dest_len);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2011-2014 Baptiste Daroussin <bapt@FreeBSD.org>
+ * Copyright (c) 2011-2015 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
  * Copyright (c) 2013 Matthew Seaman <matthew@FreeBSD.org>
  * Copyright (c) 2013 Vsevolod Stakhov <vsevolod@FreeBSD.org>
@@ -122,14 +122,10 @@
 			return (EPKG_OK);     \
 	} while (0)
 
-#define HASH_FIND_UCLT(head,type,out)                            \
-	HASH_FIND(hh, head, type, sizeof(uint16_t), out)
-#define HASH_ADD_UCLT(head,type,add)                             \
-	HASH_ADD(hh, head, type, sizeof(uint16_t), add)
-
 extern int eventpipe;
 extern int64_t debug_level;
 extern bool developer_mode;
+extern const char *pkg_rootdir;
 
 struct pkg_repo_it;
 struct pkg_repo;
@@ -178,6 +174,7 @@ struct pkg {
 	struct pkg_shlib	*shlibs_provided;
 	struct pkg_conflict *conflicts;
 	struct pkg_provide	*provides;
+	struct pkg_provide	*requires;
 	struct pkg_config_file	*config_files;
 	struct pkg_kv		*annotations;
 	unsigned			flags;
@@ -210,6 +207,7 @@ enum pkg_conflict_type {
 
 struct pkg_conflict {
 	char *uid;
+	char *digest;
 	enum pkg_conflict_type type;
 	UT_hash_handle	hh;
 };
@@ -226,6 +224,7 @@ struct pkg_file {
 	char		 uname[MAXLOGNAME];
 	char		 gname[MAXLOGNAME];
 	mode_t		 perm;
+	u_long		 fflags;
 	UT_hash_handle	 hh;
 };
 
@@ -234,6 +233,7 @@ struct pkg_dir {
 	char		 uname[MAXLOGNAME];
 	char		 gname[MAXLOGNAME];
 	mode_t		 perm;
+	u_long		 fflags;
 	UT_hash_handle	 hh;
 };
 
@@ -346,6 +346,10 @@ struct pkg_repo_ops {
 					const char *);
 	struct pkg_repo_it * (*shlib_provided)(struct pkg_repo *,
 					const char *);
+	struct pkg_repo_it * (*required)(struct pkg_repo *,
+					const char *);
+	struct pkg_repo_it * (*provided)(struct pkg_repo *,
+					const char *);
 	struct pkg_repo_it * (*search)(struct pkg_repo *, const char *, match_t,
 					pkgdb_field field, pkgdb_field sort);
 
@@ -427,7 +431,7 @@ struct plist {
 	char *pkgdep;
 	bool ignore_next;
 	int64_t flatsize;
-	struct hardlinks *hardlinks;
+	hardlinks_t *hardlinks;
 	mode_t perm;
 	struct {
 		char *buf;
@@ -442,6 +446,7 @@ struct file_attr {
 	char *owner;
 	char *group;
 	mode_t mode;
+	u_long fflags;
 };
 
 struct action {
@@ -493,8 +498,8 @@ extern struct pkg_key {
 	int type;
 } pkg_keys[PKG_NUM_FIELDS];
 
-int pkg_fetch_file_to_fd(struct pkg_repo *repo, const char *url,
-		int dest, time_t *t);
+int pkg_fetch_file_to_fd(struct pkg_repo *repo, const char *url, int dest,
+    time_t *t, ssize_t offset, int64_t size);
 int pkg_repo_fetch_package(struct pkg *pkg);
 int pkg_repo_mirror_package(struct pkg *pkg, const char *destdir);
 FILE* pkg_repo_fetch_remote_extract_tmp(struct pkg_repo *repo,
@@ -577,8 +582,8 @@ struct packing;
 int packing_init(struct packing **pack, const char *path, pkg_formats format,
     bool passmode);
 int packing_append_file_attr(struct packing *pack, const char *filepath,
-			     const char *newpath, const char *uname,
-			     const char *gname, mode_t perm);
+     const char *newpath, const char *uname, const char *gname, mode_t perm,
+     u_long fflags);
 int packing_append_buffer(struct packing *pack, const char *buffer,
 			  const char *path, int size);
 int packing_append_tree(struct packing *pack, const char *treepath,
@@ -599,6 +604,7 @@ int pkgdb_register_pkg(struct pkgdb *db, struct pkg *pkg, int complete, int forc
 int pkgdb_update_shlibs_required(struct pkg *pkg, int64_t package_id, sqlite3 *s);
 int pkgdb_update_shlibs_provided(struct pkg *pkg, int64_t package_id, sqlite3 *s);
 int pkgdb_update_provides(struct pkg *pkg, int64_t package_id, sqlite3 *s);
+int pkgdb_update_requires(struct pkg *pkg, int64_t package_id, sqlite3 *s);
 int pkgdb_insert_annotations(struct pkg *pkg, int64_t package_id, sqlite3 *s);
 int pkgdb_register_finale(struct pkgdb *db, int retcode);
 int pkgdb_set_pkg_digest(struct pkgdb *db, struct pkg *pkg);
@@ -651,17 +657,15 @@ void plist_free(struct plist *);
 int pkg_appendscript(struct pkg *pkg, const char *cmd, pkg_script type);
 
 int pkg_addscript(struct pkg *pkg, const char *data, pkg_script type);
-int pkg_addfile(struct pkg *pkg, const char *path, const char *sha256, bool check_duplicates);
+int pkg_addfile(struct pkg *pkg, const char *path, const char *sha256,
+    bool check_duplicates);
 int pkg_addfile_attr(struct pkg *pkg, const char *path, const char *sha256,
-		     const char *uname, const char *gname, mode_t perm,
-		     bool check_duplicates);
+    const char *uname, const char *gname, mode_t perm, u_long fflags,
+    bool check_duplicates);
 
-
-int pkg_adddir(struct pkg *pkg, const char *path, bool try,
-		    bool check_duplicates);
+int pkg_adddir(struct pkg *pkg, const char *path, bool check_duplicates);
 int pkg_adddir_attr(struct pkg *pkg, const char *path, const char *uname,
-		    const char *gname, mode_t perm, bool try,
-		    bool check_duplicates);
+    const char *gname, mode_t perm, u_long fflags, bool check_duplicates);
 
 int pkg_strel_add(struct pkg_strel **l, const char *name, const char *title);
 int pkg_kv_add(struct pkg_kv **kv, const char *key, const char *value, const char *title);
@@ -674,6 +678,7 @@ int pkg_addshlib_required(struct pkg *pkg, const char *name);
 int pkg_addshlib_provided(struct pkg *pkg, const char *name);
 int pkg_addconflict(struct pkg *pkg, const char *name);
 int pkg_addprovide(struct pkg *pkg, const char *name);
+int pkg_addrequire(struct pkg *pkg, const char *name);
 int pkg_addconfig_file(struct pkg *pkg, const char *name, const char *buf);
 
 int pkg_addoption(struct pkg *pkg, const char *name, const char *value);

@@ -53,7 +53,8 @@
 
 #ifdef HAVE_SYS_STATFS_H
 #include <sys/statfs.h>
-#elif defined(HAVE_SYS_STATVFS_H)
+#endif
+#if defined(HAVE_SYS_STATVFS_H)
 #include <sys/statvfs.h>
 #endif
 
@@ -237,7 +238,8 @@ pkg_jobs_add(struct pkg_jobs *j, match_t match, char **argv, int argc)
 
 	for (i = 0; i < argc; i++) {
 		jp = calloc(1, sizeof(struct job_pattern));
-		if (!pkg_jobs_maybe_match_file(jp, argv[i])) {
+		if (j->type == PKG_JOBS_DEINSTALL ||
+		    !pkg_jobs_maybe_match_file(jp, argv[i])) {
 			jp->pattern = strdup(argv[i]);
 			jp->match = match;
 		}
@@ -787,6 +789,7 @@ pkg_jobs_try_remote_candidate(struct pkg_jobs *j, const char *pattern,
 	struct pkg *p = NULL;
 	struct pkgdb_it *it;
 	unsigned flags = PKG_LOAD_BASIC|PKG_LOAD_OPTIONS|PKG_LOAD_DEPS|
+				PKG_LOAD_REQUIRES|PKG_LOAD_PROVIDES|
 				PKG_LOAD_SHLIBS_REQUIRED|PKG_LOAD_SHLIBS_PROVIDED|
 				PKG_LOAD_ANNOTATIONS|PKG_LOAD_CONFLICTS;
 	int rc = EPKG_FATAL;
@@ -805,7 +808,7 @@ pkg_jobs_try_remote_candidate(struct pkg_jobs *j, const char *pattern,
 		}
 
 		sbuf_printf(qmsg, "%s has no direct installation candidates, change it to "
-				"%s? [Y/n]: ", uid, p->uid);
+				"%s? ", uid, p->uid);
 		sbuf_finish(qmsg);
 		if (pkg_emit_query_yesno(true, sbuf_data(qmsg))) {
 			/* Change the origin of the local package */
@@ -902,6 +905,7 @@ pkg_jobs_find_upgrade(struct pkg_jobs *j, const char *pattern, match_t m)
 	int rc = EPKG_FATAL;
 	struct pkg_dep *rdep = NULL;
 	unsigned flags = PKG_LOAD_BASIC|PKG_LOAD_OPTIONS|PKG_LOAD_DEPS|
+			PKG_LOAD_REQUIRES|PKG_LOAD_PROVIDES|
 			PKG_LOAD_SHLIBS_REQUIRED|PKG_LOAD_SHLIBS_PROVIDED|
 			PKG_LOAD_ANNOTATIONS|PKG_LOAD_CONFLICTS;
 	struct pkg_job_universe_item *unit = NULL;
@@ -1066,7 +1070,9 @@ pkg_jobs_need_upgrade(struct pkg *rp, struct pkg *lp)
 	/* Compare archs */
 	if (strcmp (lp->arch, rp->arch) != 0) {
 		free(rp->reason);
-		rp->reason = strdup("ABI changed");
+		asprintf(&rp->reason, "ABI changed: '%s' -> '%s'",
+		    lp->arch, rp->arch);
+		assert(rp->reason != NULL);
 		return (true);
 	}
 
@@ -1076,14 +1082,23 @@ pkg_jobs_need_upgrade(struct pkg *rp, struct pkg *lp)
 		ret2 = pkg_options(lp, &lo);
 		if (ret1 != ret2) {
 			free(rp->reason);
-			rp->reason = strdup("options changed");
+			if (ro == NULL)
+				asprintf(&rp->reason, "option removed: %s",
+				    lo->key);
+			else if (lo == NULL)
+				asprintf(&rp->reason, "option added: %s",
+				    ro->key);
+			else
+				asprintf(&rp->reason, "option changed: %s",
+				    ro->key);
+			assert(rp->reason != NULL);
 			return (true);
 		}
 		if (ret1 == EPKG_OK) {
 			if (strcmp(lo->key, ro->key) != 0 ||
 			    strcmp(lo->value, ro->value) != 0) {
 				free(rp->reason);
-				rp->reason = strdup("options changed");
+				asprintf(&rp->reason, "options changed");
 				return (true);
 			}
 		}
@@ -1097,14 +1112,25 @@ pkg_jobs_need_upgrade(struct pkg *rp, struct pkg *lp)
 		ret2 = pkg_deps(lp, &ld);
 		if (ret1 != ret2) {
 			free(rp->reason);
-			rp->reason = strdup("direct dependency changed");
+			if (rd == NULL)
+				asprintf(&rp->reason, "direct dependency removed: %s",
+				    ld->name);
+			else if (ld == NULL)
+				asprintf(&rp->reason, "direct dependency added: %s",
+				    rd->name);
+			else
+				asprintf(&rp->reason, "direct dependency changed: %s",
+				    rd->name);
+			assert (rp->reason != NULL);
 			return (true);
 		}
 		if (ret1 == EPKG_OK) {
 			if ((strcmp(rd->name, ld->name) != 0) ||
 			    (strcmp(rd->origin, ld->origin) != 0)) {
 				free(rp->reason);
-				rp->reason = strdup("direct dependency changed");
+				asprintf(&rp->reason, "direct dependency changed: %s",
+				    rd->name);
+				assert (rp->reason != NULL);
 				return (true);
 			}
 		}
@@ -1151,8 +1177,50 @@ pkg_jobs_need_upgrade(struct pkg *rp, struct pkg *lp)
 		else
 			break;
 	}
+	/* Requires */
+	rpr = NULL;
+	lpr = NULL;
+	for (;;) {
+		ret1 = pkg_requires(rp, &rpr);
+		ret1 = pkg_requires(lp, &lpr);
+		if (ret1 != ret2) {
+			free(rp->reason);
+			rp->reason = strdup("requires changed");
+			return (true);
+		}
+		if (ret1 == EPKG_OK) {
+			if (strcmp(rpr->provide, lpr->provide) != 0) {
+				free(rp->reason);
+				rp->reason = strdup("requires changed");
+				return (true);
+			}
+		}
+		else
+			break;
+	}
 
 	/* Finish by the shlibs */
+	for (;;) {
+		ret1 = pkg_shlibs_provided(rp, &rs);
+		ret2 = pkg_shlibs_provided(lp, &ls);
+		if (ret1 != ret2) {
+			free(rp->reason);
+			rp->reason = strdup("provided shared library changed");
+			return (true);
+		}
+		if (ret1 == EPKG_OK) {
+			if (strcmp(rs->name, ls->name) != 0) {
+				free(rp->reason);
+				rp->reason = strdup("provided shared library changed");
+				pkg_debug(1, "provided shlib changed %s -> %s",
+				    ls->name, rs->name);
+				return (true);
+			}
+		}
+		else
+			break;
+	}
+
 	for (;;) {
 		ret1 = pkg_shlibs_required(rp, &rs);
 		ret2 = pkg_shlibs_required(lp, &ls);
@@ -1165,7 +1233,7 @@ pkg_jobs_need_upgrade(struct pkg *rp, struct pkg *lp)
 			if (strcmp(rs->name, ls->name) != 0) {
 				free(rp->reason);
 				rp->reason = strdup("needed shared library changed");
-				pkg_debug(1, "shlib changed %s -> %s",
+				pkg_debug(1, "Required shlib changed %s -> %s",
 				    ls->name, rs->name);
 				return (true);
 			}
@@ -1425,7 +1493,7 @@ jobs_solve_install_upgrade(struct pkg_jobs *j)
 	size_t jcount = 0;
 	struct job_pattern *jp, *jtmp;
 	struct pkg_job_request *req, *rtmp;
-	unsigned flags = PKG_LOAD_BASIC|PKG_LOAD_OPTIONS|PKG_LOAD_DEPS|
+	unsigned flags = PKG_LOAD_BASIC|PKG_LOAD_OPTIONS|PKG_LOAD_DEPS|PKG_LOAD_REQUIRES|
 			PKG_LOAD_SHLIBS_REQUIRED|PKG_LOAD_ANNOTATIONS|PKG_LOAD_CONFLICTS;
 	struct pkg_jobs_install_candidate *candidates, *c;
 

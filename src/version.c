@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2011-2012 Baptiste Daroussin <bapt@FreeBSD.org>
+ * Copyright (c) 2011-2015 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
  * Copyright (c) 2011 Philippe Pepiot <phil@philpep.org>
  * Copyright (c) 2011-2012 Marin Atanasov Nikolov <dnaeon@gmail.com>
@@ -50,7 +50,7 @@
 #include <spawn.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <uthash.h>
+#include <khash.h>
 
 #include "pkgcli.h"
 
@@ -59,21 +59,17 @@ extern char **environ;
 struct index_entry {
 	char *origin;
 	char *version;
-	UT_hash_handle hh;
 };
 
-struct port_entry {
-	char *name;
-	UT_hash_handle hh;
-};
-
+KHASH_MAP_INIT_STR(index, struct index_entry *);
+KHASH_MAP_INIT_STR(ports, char *);
 struct category {
 	char *name;
-	struct port_entry *ports;
-	UT_hash_handle hh;
+	kh_ports_t *ports;
 };
+KHASH_MAP_INIT_STR(categories, struct category *);
 
-struct category *categories = NULL;
+kh_categories_t *categories = NULL;
 
 void
 usage_version(void)
@@ -285,16 +281,17 @@ indexfilename(char *filebuf, size_t filebuflen)
 	return (filebuf);
 }
 
-static struct index_entry *
+static kh_index_t *
 hash_indexfile(const char *indexfilename)
 {
 	FILE			*indexfile;
-	struct index_entry	*indexhead = NULL;
+	kh_index_t		*index = NULL;
 	struct index_entry	*entry;
 	char			*version, *origin;
 	char			*line = NULL, *l, *p;
 	size_t			 linecap = 0;
-	int			 dirs;
+	int			 dirs, ret;
+	khint_t			 k;
 
 
 	/* Create a hash table of all the package names and port
@@ -336,55 +333,50 @@ hash_indexfile(const char *indexfilename)
 			err(EX_SOFTWARE, "Out of memory while reading %s",
 			    indexfilename);
 
-		HASH_ADD_KEYPTR(hh, indexhead, entry->origin,
-				strlen(entry->origin), entry);
+		if (index == NULL)
+			index = kh_init_index();
+		k = kh_put_index(index, entry->origin, &ret);
+		if (ret != 0)
+			kh_value(index, k) = entry;
 	}
 
 	free(line);
 	fclose(indexfile);
 
-	return (indexhead);
-}
-
-static void
-free_port_entries(struct port_entry *entries)
-{
-	struct port_entry	*entry, *tmp;
-
-	HASH_ITER(hh, entries, entry, tmp) {
-		HASH_DEL(entries, entry);
-		free(entry->name);
-		free(entry);
-	}
-	return;
+	return (index);
 }
 
 static void
 free_categories(void)
 {
-	struct category	*cat, *tmp;
+	const char *key, *k;
+	char *v;
+	struct category *cat;
 
-	HASH_ITER(hh, categories, cat, tmp) {
-		HASH_DEL(categories, cat);
-		free_port_entries(cat->ports);
+	kh_foreach(categories, key, cat, {
 		free(cat->name);
+		kh_foreach(cat->ports, k, v, free(v));
+		kh_destroy_ports(cat->ports);
 		free(cat);
-	}
-	return;
+	});
+	kh_destroy_categories(categories);
 }
 
 static void
-free_index(struct index_entry *indexhead)
+free_index(kh_index_t *index)
 {
-	struct index_entry	*entry, *tmp;
+	const char *key __unused;
+	struct index_entry *entry;
 
-	HASH_ITER(hh, indexhead, entry, tmp) {
-		HASH_DEL(indexhead, entry);
+	if (index == NULL)
+		return;
+
+	kh_foreach(index, key, entry, {
 		free(entry->origin);
 		free(entry->version);
 		free(entry);
-	}
-	return;
+	});
+	kh_destroy_index(index);
 }
 
 static bool
@@ -416,12 +408,12 @@ static int
 do_source_index(unsigned int opt, char limchar, char *pattern, match_t match,
 	        const char *matchorigin, const char *indexfile)
 {
-	struct index_entry	*indexhead;
-	struct index_entry	*entry;
-	struct pkgdb		*db = NULL;
-	struct pkgdb_it		*it = NULL;
-	struct pkg		*pkg = NULL;
-	const char		*origin;
+	kh_index_t	*index;
+	struct pkgdb	*db = NULL;
+	struct pkgdb_it	*it = NULL;
+	struct pkg	*pkg = NULL;
+	const char	*origin;
+	khint_t		 k;
 
 	if ( (opt & VERSION_SOURCES) != VERSION_SOURCE_INDEX) {
 		usage_version();
@@ -431,11 +423,11 @@ do_source_index(unsigned int opt, char limchar, char *pattern, match_t match,
 	if (pkgdb_open(&db, PKGDB_DEFAULT) != EPKG_OK)
 		return (EX_IOERR);
 
-	indexhead = hash_indexfile(indexfile);
+	index = hash_indexfile(indexfile);
 
 	if (pkgdb_obtain_lock(db, PKGDB_LOCK_READONLY) != EPKG_OK) {
 		pkgdb_close(db);
-		free_index(indexhead);
+		free_index(index);
 		warnx("Cannot get a read lock on the database. "
 		      "It is locked by another process");
 		return (EX_TEMPFAIL);
@@ -454,14 +446,14 @@ do_source_index(unsigned int opt, char limchar, char *pattern, match_t match,
 		    strcmp(origin, matchorigin) != 0)
 			continue;
 		
-		HASH_FIND_STR(indexhead, origin, entry);
+		k = kh_get_index(index, origin);
 		print_version(pkg, "index",
-		    entry != NULL ? entry->version : NULL, limchar, opt);
+		    k != kh_end(index) ? (kh_value(index, k))->version : NULL, limchar, opt);
 	}
 
 cleanup:
 	pkgdb_release_lock(db, PKGDB_LOCK_READONLY);
-	free_index(indexhead);
+	free_index(index);
 	pkg_free(pkg);
 	pkgdb_it_free(it);
 	pkgdb_close(db);
@@ -603,11 +595,12 @@ exec_buf(struct sbuf *res, char **argv) {
 static struct category *
 category_new(char *categorypath, const char *category)
 {
-	struct sbuf		*makecmd;
-	struct port_entry	*port;
-	struct category		*cat = NULL;
-	char			*results, *d;
-	char			*argv[5];
+	struct category	*cat = NULL;
+	struct sbuf	*makecmd;
+	char		*results, *d, *key;
+	char		*argv[5];
+	int		 ret;
+	khint_t		 k;
 
 	makecmd = sbuf_new_auto();
 
@@ -622,17 +615,26 @@ category_new(char *categorypath, const char *category)
 
 	results = sbuf_data(makecmd);
 
-	cat = calloc(1, sizeof(struct category));
-	cat->name = strdup(category);
-	while ((d = strsep(&results, " \n")) != NULL) {
-		port = calloc(1, sizeof(struct port_entry));
-		port->name = strdup(d);
-		HASH_ADD_KEYPTR(hh, cat->ports, port->name,
-				strlen(port->name), port);
-	}
+	if (categories == NULL)
+		categories = kh_init_categories();
 
-	HASH_ADD_KEYPTR(hh, categories, cat->name,
-			strlen(cat->name), cat);
+	cat = calloc(1, sizeof(*cat));
+	if (cat == NULL)
+		goto cleanup;
+
+	cat->name = strdup(category);
+	cat->ports = kh_init_ports();
+
+	k = kh_put_categories(categories, cat->name, &ret);
+	kh_value(categories, k) = cat;
+	while ((d = strsep(&results, " \n")) != NULL) {
+		key = strdup(d);
+		k = kh_put_ports(cat->ports, key, &ret);
+		if (k != kh_end(cat->ports))
+			kh_value(cat->ports, k) = key;
+		else
+			free(key);
+	}
 
 cleanup:
 	sbuf_delete(makecmd);
@@ -643,10 +645,10 @@ cleanup:
 static bool
 validate_origin(const char *portsdir, const char *origin)
 {
-	char			*category, *buf;
-	struct category		*cat;
-	struct port_entry	*port;
-	char			categorypath[MAXPATHLEN];
+	struct category	*cat;
+	char		*category, *buf;
+	char		 categorypath[MAXPATHLEN];
+	khint_t		 k;
 
 	snprintf(categorypath, MAXPATHLEN, "%s/%s", portsdir, origin);
 
@@ -655,9 +657,12 @@ validate_origin(const char *portsdir, const char *origin)
 	category = strrchr(categorypath, '/');
 	category++;
 
-	HASH_FIND_STR(categories, category, cat);
-	if (cat == NULL) {
+	if (categories != NULL)
+		k = kh_get_categories(categories, category);
+	if (categories == NULL || k == kh_end(categories)) {
 		cat = category_new(categorypath, category);
+	} else {
+		cat = kh_value(categories, k);
 	}
 
 	if (cat == NULL)
@@ -666,9 +671,9 @@ validate_origin(const char *portsdir, const char *origin)
 	buf = strrchr(origin, '/');
 	buf++;
 
-	HASH_FIND_STR(cat->ports, buf, port);
+	k = kh_get_ports(cat->ports, buf);
 
-	return (port != NULL);
+	return (k != kh_end(cat->ports));
 }
 
 static const char *
@@ -697,6 +702,7 @@ port_version(struct sbuf *cmd, const char *portsdir, const char *origin)
 			version = strsep(&output, "\n");
 		}
 	}
+
 	return (version);
 }
 

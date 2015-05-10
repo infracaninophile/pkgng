@@ -166,26 +166,28 @@ usage(const char *conffile, const char *reposdir, FILE *out, enum pkg_usage_reas
 	}
 
 #ifdef HAVE_LIBJAIL
- 	fprintf(out, "Usage: pkg [-v] [-d] [-l] [-N] [-j <jail name or id>|-c <chroot path>] [-C <configuration file>] [-R <repo config dir>] [-o var=value] [-4|-6] <command> [<args>]\n");
+#define JAIL_ARG	"-j <jail name or id>|"
 #else
-	fprintf(out, "Usage: pkg [-v] [-d] [-l] [-N] [-c <chroot path>] [-C <configuration file>] [-R <repo config dir>] [-o var=value] [-4|-6] <command> [<args>]\n");
+#define JAIL_ARG
 #endif
+	fprintf(out, "Usage: pkg [-v] [-d] [-l] [-N] ["JAIL_ARG"-c <chroot path>|-r <rootdir>] [-C <configuration file>] [-R <repo config dir>] [-o var=value] [-4|-6] <command> [<args>]\n");
 	if (reason == PKG_USAGE_HELP) {
 		fprintf(out, "Global options supported:\n");
 		fprintf(out, "\t%-15s%s\n", "-d", "Increment debug level");
 #ifdef HAVE_LIBJAIL
 		fprintf(out, "\t%-15s%s\n", "-j", "Execute pkg(8) inside a jail(8)");
 #endif
+		fprintf(out, "\t%-15s%s\n", "-R", "Execute pkg(8) using relocating installation to <rootdir>");
 		fprintf(out, "\t%-15s%s\n", "-c", "Execute pkg(8) inside a chroot(8)");
 		fprintf(out, "\t%-15s%s\n", "-C", "Use the specified configuration file");
 		fprintf(out, "\t%-15s%s\n", "-R", "Directory to search for individual repository configurations");
 		fprintf(out, "\t%-15s%s\n", "-l", "List available commands and exit");
 		fprintf(out, "\t%-15s%s\n", "-v", "Display pkg(8) version");
-		fprintf(out, "\t%-15s%s\n\n", "-N", "Test if pkg(8) is activated and avoid auto-activation");
-		fprintf(out, "\t%-15s%s\n\n", "-o", "Override configuration option from the command line");
+		fprintf(out, "\t%-15s%s\n", "-N", "Test if pkg(8) is activated and avoid auto-activation");
+		fprintf(out, "\t%-15s%s\n", "-o", "Override configuration option from the command line");
 		fprintf(out, "\t%-15s%s\n", "-4", "Only use IPv4");
 		fprintf(out, "\t%-15s%s\n", "-6", "Only use IPv6");
-		fprintf(out, "Commands supported:\n");
+		fprintf(out, "\nCommands supported:\n");
 
 		for (i = 0; i < cmd_len; i++)
 			fprintf(out, "\t%-15s%s\n", cmd[i].name, cmd[i].desc);
@@ -553,6 +555,7 @@ main(int argc, char **argv)
 	struct commands	 *command = NULL;
 	unsigned int	  ambiguous = 0;
 	const char	 *chroot_path = NULL;
+	const char	 *rootdir = NULL;
 #ifdef HAVE_LIBJAIL
 	int		  jid;
 #endif
@@ -581,6 +584,7 @@ main(int argc, char **argv)
 		{ "chroot",		required_argument,	NULL,	'c' },
 		{ "config",		required_argument,	NULL,	'C' },
 		{ "repo-conf-dir",	required_argument,	NULL,	'R' },
+		{ "rootdir",		required_argument,	NULL,	'r' },
 		{ "list",		no_argument,		NULL,	'l' },
 		{ "version",		no_argument,		NULL,	'v' },
 		{ "option",		required_argument,	NULL,	'o' },
@@ -610,10 +614,11 @@ main(int argc, char **argv)
 	save_argv = argv;
 
 #ifdef HAVE_LIBJAIL
-	while ((ch = getopt_long(argc, argv, "+dj:c:C:R:lNvo:46", longopts, NULL)) != -1) {
+#define JAIL_OPT	"j:"
 #else
-	while ((ch = getopt_long(argc, argv, "+dc:C:R:lNvo:46", longopts, NULL)) != -1) {
+#define JAIL_OPT
 #endif
+	while ((ch = getopt_long(argc, argv, "+d"JAIL_OPT"c:C:R:r:lNvo:46", longopts, NULL)) != -1) {
 		switch (ch) {
 		case 'd':
 			debug++;
@@ -626,6 +631,9 @@ main(int argc, char **argv)
 			break;
 		case 'R':
 			reposdir = optarg;
+			break;
+		case 'r':
+			rootdir = optarg;
 			break;
 #ifdef HAVE_LIBJAIL
 		case 'j':
@@ -685,9 +693,11 @@ main(int argc, char **argv)
 	arc4random_stir();
 #endif
 
-	if (jail_str != NULL && chroot_path != NULL) {
+	if ((jail_str != NULL && (chroot_path != NULL || rootdir != NULL)) ||
+	    (chroot_path != NULL && (jail_str != NULL || rootdir != NULL)) ||
+	    (rootdir != NULL && (jail_str != NULL || chroot_path != NULL)))  {
 		usage(conffile, reposdir, stderr, PKG_USAGE_INVALID_ARGUMENTS,
-				"-j and -c cannot be used at the same time!\n");
+		    "-j, -c and/or -r cannot be used at the same time!\n");
 	}
 
 	if (chroot_path != NULL)
@@ -708,6 +718,12 @@ main(int argc, char **argv)
 		if (chdir("/") == -1)
 			errx(EX_SOFTWARE, "chdir() failed");
 #endif
+
+	if (rootdir != NULL) {
+		if (chdir(rootdir) == -1)
+			errx(EX_SOFTWARE, "chdir() failed");
+		pkg_set_rootdir(rootdir);
+	}
 
 	if (pkg_ini(conffile, reposdir, init_flags) != EPKG_OK)
 		errx(EX_SOFTWARE, "Cannot parse configuration file!");

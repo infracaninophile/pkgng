@@ -334,7 +334,6 @@ format_exec_cmd(char **dest, const char *in, const char *prefix,
 					    " available", pos, argc);
 					sbuf_finish(buf);
 					sbuf_free(buf);
-
 					return (EPKG_FATAL);
 				}
 				sbuf_cat(buf, argv[pos -1]);
@@ -475,17 +474,13 @@ string_end_with(const char *path, const char *str)
 }
 
 bool
-check_for_hardlink(struct hardlinks **hl, struct stat *st)
+check_for_hardlink(hardlinks_t *hl, struct stat *st)
 {
-	struct hardlinks *h;
+	int absent;
 
-	HASH_FIND_INO(*hl, &st->st_ino, h);
-	if (h != NULL)
+	kh_put_hardlinks(hl, st->st_ino, &absent);
+	if (absent == 0)
 		return (true);
-
-	h = malloc(sizeof(struct hardlinks));
-	h->inode = st->st_ino;
-	HASH_ADD_INO(*hl, inode, h);
 
 	return (false);
 }

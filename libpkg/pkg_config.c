@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2014 Baptiste Daroussin <bapt@FreeBSD.org>
+ * Copyright (c) 2011-2015 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
  * Copyright (c) 2014 Matthew Seaman <matthew@FreeBSD.org>
  * Copyright (c) 2014 Vsevolod Stakhov <vsevolod@FreeBSD.org>
@@ -65,6 +65,7 @@
 int eventpipe = -1;
 int64_t debug_level = 0;
 bool developer_mode = false;
+const char *pkg_rootdir = NULL;
 
 struct config_entry {
 	uint8_t type;
@@ -351,7 +352,7 @@ static struct config_entry c[] = {
 	{
 		PKG_BOOL,
 		"CONSERVATIVE_UPGRADE",
-		"NO",
+		"YES",
 		"Prefer repos with higher priority during upgrade"
 	},
 	{
@@ -445,7 +446,7 @@ disable_plugins_if_static(void)
 
 	/* if dlh is NULL then we are in static binary */
 	if (dlh == NULL)
-		ucl_object_replace_key(config, ucl_object_frombool(false), "ENABLE_PLUGINS", 14, false);
+		ucl_object_replace_key(config, ucl_object_frombool(false), "PKG_ENABLE_PLUGINS", 18, false);
 	else
 		dlclose(dlh);
 
@@ -766,6 +767,8 @@ pkg_ini(const char *path, const char *reposdir, pkg_init_flags flags)
 	ucl_object_iter_t it = NULL;
 	struct sbuf *ukey = NULL;
 	bool fatal_errors = false;
+	char *rootedpath = NULL;
+	char *tmp = NULL;
 
 	k = NULL;
 	o = NULL;
@@ -788,8 +791,14 @@ pkg_ini(const char *path, const char *reposdir, pkg_init_flags flags)
 	for (i = 0; i < c_size; i++) {
 		switch (c[i].type) {
 		case PKG_STRING:
+			tmp = NULL;
+			if (c[i].def != NULL && c[i].def[0] == '/' &&
+			    pkg_rootdir != NULL) {
+				asprintf(&tmp, "%s%s", pkg_rootdir, c[i].def);
+			}
 			obj = ucl_object_fromstring_common(
-			    c[i].def != NULL ? c[i].def : "", 0, UCL_STRING_TRIM);
+			    c[i].def != NULL ? tmp != NULL ? tmp : c[i].def : "", 0, UCL_STRING_TRIM);
+			free(tmp);
 			ucl_object_insert_key(config, obj,
 			    c[i].key, strlen(c[i].key), false);
 			break;
@@ -859,11 +868,14 @@ pkg_ini(const char *path, const char *reposdir, pkg_init_flags flags)
 	if (path == NULL)
 		path = PREFIX"/etc/pkg.conf";
 
+	if (pkg_rootdir != NULL)
+		asprintf(&rootedpath, "%s/%s", pkg_rootdir, path);
+
 	p = ucl_parser_new(0);
 
 	errno = 0;
 	obj = NULL;
-	if (!ucl_parser_add_file(p, path)) {
+	if (!ucl_parser_add_file(p, rootedpath != NULL ? rootedpath : path)) {
 		if (errno != ENOENT)
 			pkg_emit_error("Invalid configuration file: %s", ucl_parser_get_error(p));
 	} else {
@@ -908,6 +920,7 @@ pkg_ini(const char *path, const char *reposdir, pkg_init_flags flags)
 	if (fatal_errors) {
 		ucl_object_unref(ncfg);
 		ucl_parser_free(p);
+		free(rootedpath);
 		return (EPKG_FATAL);
 	}
 
@@ -969,7 +982,7 @@ pkg_ini(const char *path, const char *reposdir, pkg_init_flags flags)
 				buf++;
 				walk = buf;
 			}
-			key = walk;
+			k = walk;
 			value = walk;
 			while (*value != '\0') {
 				if (*value == '=')
@@ -1017,6 +1030,7 @@ pkg_ini(const char *path, const char *reposdir, pkg_init_flags flags)
 	parsed = true;
 	ucl_object_unref(obj);
 	ucl_parser_free(p);
+	free(rootedpath);
 
 	if (strcmp(pkg_object_string(pkg_config_get("ABI")), "unknown") == 0) {
 		pkg_emit_error("Unable to determine ABI");
@@ -1235,4 +1249,12 @@ pkg_set_debug_level(int64_t new_debug_level) {
 
 	debug_level = new_debug_level;
 	return old_debug_level;
+}
+
+void
+pkg_set_rootdir(const char *rootdir) {
+	if (pkg_initialized())
+		return;
+
+	pkg_rootdir = rootdir;
 }

@@ -562,7 +562,7 @@ event_callback(void *data, struct pkg_event *ev)
 		break;
 	case PKG_EVENT_NOTICE:
 		if (!quiet)
-			warnx("%s", ev->e_pkg_notice.msg);
+			printf("%s\n", ev->e_pkg_notice.msg);
 		break;
 	case PKG_EVENT_DEVELOPER_MODE:
 		warnx("DEVELOPER_MODE: %s", ev->e_pkg_error.msg);
@@ -623,7 +623,7 @@ event_callback(void *data, struct pkg_event *ev)
 		if (pkg_has_message(pkg)) {
 			if (messages == NULL)
 				messages = sbuf_new_auto();
-			pkg_sbuf_printf(messages, "Message for %n-%v:\n %M\n",
+			pkg_sbuf_printf(messages, "Message for %n-%v:\n%M\n",
 			    pkg, pkg, pkg);
 		}
 		break;
@@ -702,8 +702,8 @@ event_callback(void *data, struct pkg_event *ev)
 	case PKG_EVENT_UPGRADE_BEGIN:
 		if (quiet)
 			break;
-		pkg_new = ev->e_upgrade_begin.new;
-		pkg_old = ev->e_upgrade_begin.old;
+		pkg_new = ev->e_upgrade_begin.n;
+		pkg_old = ev->e_upgrade_begin.o;
 		nbdone++;
 
 		job_status_begin(msg_buf);
@@ -728,7 +728,7 @@ event_callback(void *data, struct pkg_event *ev)
 	case PKG_EVENT_UPGRADE_FINISHED:
 		if (quiet)
 			break;
-		pkg_new = ev->e_upgrade_finished.new;
+		pkg_new = ev->e_upgrade_finished.n;
 		if (pkg_has_message(pkg_new)) {
 			if (messages == NULL)
 				messages = sbuf_new_auto();
@@ -760,7 +760,7 @@ event_callback(void *data, struct pkg_event *ev)
 		    "the repositories\n", ev->e_not_found.pkg_name);
 		break;
 	case PKG_EVENT_MISSING_DEP:
-		fprintf(stderr, "missing dependency %s-%s\n",
+		warnx("Missing dependency '%s-%s'",
 		    pkg_dep_name(ev->e_missing_dep.dep),
 		    pkg_dep_version(ev->e_missing_dep.dep));
 		break;

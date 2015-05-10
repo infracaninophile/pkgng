@@ -1,7 +1,7 @@
 /*-
  * Copyright (c) 2014 Matthew Seaman <matthew@FreeBSD.org>
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -11,7 +11,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
@@ -42,7 +42,7 @@ do_diff_matched_packages(struct pkgdb *db, match_t match,
 {
 	struct pkg_jobs	*jobs = NULL;
 	int		 ret;
-	
+
 	ret = pkg_jobs_new(&jobs, PKG_JOBS_DIFF, db);
 	if (ret != EPKG_OK)
 		return (ret);
@@ -52,7 +52,7 @@ do_diff_matched_packages(struct pkgdb *db, match_t match,
 		if (ret != EPKG_OK)
 			goto cleanup;
 	}
-			
+
 	ret = pkg_jobs_add(jobs, match, argv, argc);
 	if (ret != EPKG_OK)
 		goto cleanup;
@@ -62,10 +62,10 @@ do_diff_matched_packages(struct pkgdb *db, match_t match,
 		goto cleanup;
 
 	ret = pkg_jobs_apply(jobs);
-	
+
 cleanup:
 	pkg_jobs_free(jobs);
-	
+
 	return (ret);
 }
 
@@ -86,7 +86,7 @@ exec_diff(int argc, char **argv)
 	int		 ret;
 	match_t 	 match = MATCH_EXACT;
 	unsigned	 mode;
-	
+
 	struct option longopts[] = {
 		{ "all",	      no_argument,       NULL, 'a' },
 		{ "case-sensitive",   no_argument,       NULL, 'C' },
@@ -147,7 +147,7 @@ exec_diff(int argc, char **argv)
 		mode = PKGDB_MODE_READ|PKGDB_MODE_WRITE|PKGDB_MODE_CREATE;
 	else
 		mode = PKGDB_MODE_READ;
-			
+
 	ret = pkgdb_access(mode, PKGDB_DB_LOCAL|PKGDB_DB_REPO);
 	if (ret == EPKG_ENODB) {
 		if (!quiet)
@@ -168,7 +168,7 @@ exec_diff(int argc, char **argv)
 		if (ret != EPKG_OK)
 			return (ret);
 	}
-	
+
 	ret = pkgdb_open_all(&db, PKGDB_REMOTE, reponame);
 	if (ret != EPKG_OK) {
 		if (!quiet)
@@ -179,7 +179,7 @@ exec_diff(int argc, char **argv)
 	/* We want to fetch all the packages we might use for upgrade
 	 * so we can access the file lists. Hence we need to update
 	 * the repo catalogues.*/
-	
+
 	ret = pkgdb_obtain_lock(db, PKGDB_LOCK_READONLY);
 	if (ret != EPKG_OK) {
 		pkgdb_close(db);
@@ -192,6 +192,6 @@ exec_diff(int argc, char **argv)
 
 	pkgdb_release_lock(db, PKGDB_LOCK_READONLY);
 	pkgdb_close(db);
-	
+
 	return ((ret == EPKG_OK) ? EX_OK : EX_SOFTWARE);
 }

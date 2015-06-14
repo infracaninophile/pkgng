@@ -241,6 +241,10 @@ autotools and some other tools installed.
 
 	# pkg install autoconf automake libtool pkgconf
 
+In order to run the test suite, you will also need kyua installed:
+
+   	# pkg install kyua
+
 The next thing to do is to get the pkg sources installed on your machine.
 You can grab a development snapshot of pkg from the [pkg GitHub repository][1]
 

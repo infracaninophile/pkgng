@@ -38,7 +38,6 @@
 
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
-#include <openssl/sha.h>
 
 #define STARTS_WITH(string, needle) (strncasecmp(string, needle, strlen(needle)) == 0)
 
@@ -71,10 +70,8 @@ struct rsa_key {
 
 void sbuf_init(struct sbuf **);
 int sbuf_set(struct sbuf **, const char *);
-char * sbuf_get(struct sbuf *);
 void sbuf_reset(struct sbuf *);
 void sbuf_free(struct sbuf *);
-ssize_t sbuf_size(struct sbuf *);
 
 int mkdirs(const char *path);
 int file_to_buffer(const char *, char **, off_t *);
@@ -82,12 +79,6 @@ int file_to_bufferat(int, const char *, char **, off_t *);
 int format_exec_cmd(char **, const char *, const char *, const char *, char *,
     int argc, char **argv);
 int is_dir(const char *);
-
-void sha256_buf(const char *, size_t len, char[SHA256_DIGEST_LENGTH * 2 +1]);
-void sha256_buf_bin(const char *, size_t len, char[SHA256_DIGEST_LENGTH]);
-int sha256_file(const char *, char[SHA256_DIGEST_LENGTH * 2 +1]);
-int sha256_fileat(int fd, const char *, char[SHA256_DIGEST_LENGTH * 2 +1]);
-int sha256_fd(int fd, char[SHA256_DIGEST_LENGTH * 2 +1]);
 
 int rsa_new(struct rsa_key **, pem_password_cb *, char *path);
 void rsa_free(struct rsa_key *);

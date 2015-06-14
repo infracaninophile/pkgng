@@ -68,6 +68,7 @@
 #include "private/pkg.h"
 #include "private/pkgdb.h"
 #include "private/utils.h"
+#include "private/pkg_deps.h"
 
 #include "private/db_upgrades.h"
 
@@ -87,7 +88,7 @@
 */
 
 #define DB_SCHEMA_MAJOR	0
-#define DB_SCHEMA_MINOR	31
+#define DB_SCHEMA_MINOR	32
 
 #define DBVERSION (DB_SCHEMA_MAJOR * 1000 + DB_SCHEMA_MINOR)
 
@@ -219,6 +220,59 @@ pkgdb_myarch(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 	sqlite3_result_text(ctx, arch, strlen(arch), NULL);
 }
 
+static void
+pkgdb_vercmp(sqlite3_context *ctx, int argc, sqlite3_value **argv)
+{
+	const char *op_str, *arg1, *arg2;
+	enum pkg_dep_version_op op;
+	int cmp;
+	bool ret;
+
+	if (argc != 3) {
+		sqlite3_result_error(ctx, "Invalid usage of vercmp\n", -1);
+		return;
+	}
+
+	op_str = sqlite3_value_text(argv[0]);
+	arg1 = sqlite3_value_text(argv[1]);
+	arg2 = sqlite3_value_text(argv[2]);
+
+	if (op_str == NULL || arg1 == NULL || arg2 == NULL) {
+		sqlite3_result_error(ctx, "Invalid usage of vercmp\n", -1);
+		return;
+	}
+
+	op = pkg_deps_string_toop(op_str);
+	cmp = pkg_version_cmp(arg1, arg2);
+
+	switch(op) {
+	case VERSION_ANY:
+	default:
+		ret = true;
+		break;
+	case VERSION_EQ:
+		ret = (cmp == 0);
+		break;
+	case VERSION_GE:
+		ret = (cmp >= 0);
+		break;
+	case VERSION_LE:
+		ret = (cmp <= 0);
+		break;
+	case VERSION_GT:
+		ret = (cmp > 0);
+		break;
+	case VERSION_LT:
+		ret = (cmp < 0);
+		break;
+	case VERSION_NOT:
+		ret = (cmp != 0);
+		break;
+	}
+
+	sqlite3_result_int(ctx, ret);
+}
+
 static int
 pkgdb_upgrade(struct pkgdb *db)
 {
@@ -340,7 +394,8 @@ pkgdb_init(sqlite3 *sdb)
 		"licenselogic INTEGER NOT NULL,"
 		"time INTEGER, "
 		"manifestdigest TEXT NULL, "
-		"pkg_format_version INTEGER"
+		"pkg_format_version INTEGER,"
+		"dep_formula TEXT NULL"
 	");"
 	"CREATE UNIQUE INDEX packages_unique ON packages(name);"
 	"CREATE TABLE mtree ("
@@ -1303,10 +1358,10 @@ static sql_prstmt sql_prepared_statements[PRSTMT_LAST] = {
 		"INSERT OR REPLACE INTO packages( "
 			"origin, name, version, comment, desc, message, arch, "
 			"maintainer, www, prefix, flatsize, automatic, "
-			"licenselogic, mtree_id, time, manifestdigest) "
+			"licenselogic, mtree_id, time, manifestdigest, dep_formula) "
 		"VALUES( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, "
-		"?13, (SELECT id FROM mtree WHERE content = ?14), NOW(), ?15)",
-		"TTTTTTTTTTIIITT",
+		"?13, (SELECT id FROM mtree WHERE content = ?14), NOW(), ?15, ?16)",
+		"TTTTTTTTTTIIITTT",
 	},
 	[DEPS_UPDATE] = {
 		NULL,
@@ -1645,7 +1700,7 @@ pkgdb_register_pkg(struct pkgdb *db, struct pkg *pkg, int complete, int forced)
 	ret = run_prstmt(PKG, pkg->origin, pkg->name, pkg->version,
 	    pkg->comment, pkg->desc, pkg->message, arch, pkg->maintainer,
 	    pkg->www, pkg->prefix, pkg->flatsize, (int64_t)pkg->automatic,
-	    (int64_t)pkg->licenselogic, NULL, pkg->digest);
+	    (int64_t)pkg->licenselogic, NULL, pkg->digest, pkg->dep_formula);
 	if (ret != SQLITE_DONE) {
 		ERROR_SQLITE(s, SQL(PKG));
 		goto cleanup;
@@ -2575,7 +2630,7 @@ pkgdb_set2(struct pkgdb *db, struct pkg *pkg, ...)
 
 int
 pkgdb_file_set_cksum(struct pkgdb *db, struct pkg_file *file,
-		     const char *sha256)
+     const char *sum)
 {
 	sqlite3_stmt	*stmt = NULL;
 	const char	 sql_file_update[] = ""
@@ -2588,7 +2643,7 @@ pkgdb_file_set_cksum(struct pkgdb *db, struct pkg_file *file,
 		ERROR_SQLITE(db->sqlite, sql_file_update);
 		return (EPKG_FATAL);
 	}
-	sqlite3_bind_text(stmt, 1, sha256, -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 1, sum, -1, SQLITE_STATIC);
 	sqlite3_bind_text(stmt, 2, file->path, -1, SQLITE_STATIC);
 
 	if (sqlite3_step(stmt) != SQLITE_DONE) {
@@ -2597,7 +2652,7 @@ pkgdb_file_set_cksum(struct pkgdb *db, struct pkg_file *file,
 		return (EPKG_FATAL);
 	}
 	sqlite3_finalize(stmt);
-	strlcpy(file->sum, sha256, sizeof(file->sum));
+	file->sum = strdup(sum);
 
 	return (EPKG_OK);
 }
@@ -2610,17 +2665,18 @@ int
 pkgdb_sqlcmd_init(sqlite3 *db, __unused const char **err,
     __unused const void *noused)
 {
-	sqlite3_create_function(db, "now", 0, SQLITE_ANY, NULL,
+	sqlite3_create_function(db, "now", 0, SQLITE_ANY|SQLITE_DETERMINISTIC, NULL,
 	    pkgdb_now, NULL, NULL);
-	sqlite3_create_function(db, "myarch", 0, SQLITE_ANY, NULL,
+	sqlite3_create_function(db, "myarch", 0, SQLITE_ANY|SQLITE_DETERMINISTIC, NULL,
 	    pkgdb_myarch, NULL, NULL);
-	sqlite3_create_function(db, "myarch", 1, SQLITE_ANY, NULL,
+	sqlite3_create_function(db, "myarch", 1, SQLITE_ANY|SQLITE_DETERMINISTIC, NULL,
 	    pkgdb_myarch, NULL, NULL);
-	sqlite3_create_function(db, "regexp", 2, SQLITE_ANY, NULL,
+	sqlite3_create_function(db, "regexp", 2, SQLITE_ANY|SQLITE_DETERMINISTIC, NULL,
 	    pkgdb_regex, NULL, NULL);
-	sqlite3_create_function(db, "split_version", 2, SQLITE_ANY, NULL,
+	sqlite3_create_function(db, "split_version", 2, SQLITE_ANY|SQLITE_DETERMINISTIC, NULL,
 	    pkgdb_split_version, NULL, NULL);
-
+	sqlite3_create_function(db, "vercmp", 3, SQLITE_ANY|SQLITE_DETERMINISTIC, NULL,
+	    pkgdb_vercmp, NULL, NULL);
 
 	return SQLITE_OK;
 }

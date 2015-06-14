@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2011-2014 Baptiste Daroussin <bapt@FreeBSD.org>
+ * Copyright (c) 2011-2015 Baptiste Daroussin <bapt@FreeBSD.org>
  * Copyright (c) 2011-2012 Julien Laffaye <jlaffaye@FreeBSD.org>
  * Copyright (c) 2012 Bryan Drewery <bryan@shatow.net>
  * Copyright (c) 2013 Matthew Seaman <matthew@FreeBSD.org>
@@ -39,43 +39,6 @@
 #include "private/pkg.h"
 #include "private/utils.h"
 
-static ucl_object_t *manifest_schema = NULL;
-
-struct pkg_key pkg_keys[PKG_NUM_FIELDS] = {
-	[PKG_ORIGIN] = { "origin", UCL_STRING },
-	[PKG_NAME] = { "name", UCL_STRING },
-	[PKG_VERSION] = { "version", UCL_STRING },
-	[PKG_COMMENT] = { "comment", UCL_STRING },
-	[PKG_DESC] = { "desc", UCL_STRING },
-	[PKG_MTREE] = { "mtree", UCL_STRING },
-	[PKG_MESSAGE] = { "message", UCL_STRING },
-	[PKG_ABI] = { "abi", UCL_STRING },
-	[PKG_ARCH] = { "arch", UCL_STRING },
-	[PKG_MAINTAINER] = { "maintainer", UCL_STRING },
-	[PKG_WWW] = { "www", UCL_STRING },
-	[PKG_PREFIX] = { "prefix", UCL_STRING },
-	[PKG_REPOPATH] = { "repopath", UCL_STRING },
-	[PKG_CKSUM] = { "sum", UCL_STRING },
-	[PKG_OLD_VERSION] = { "oldversion", UCL_STRING },
-	[PKG_REPONAME] = { "reponame", UCL_STRING },
-	[PKG_REPOURL] = { "repourl", UCL_STRING },
-	[PKG_DIGEST] = { "digest", UCL_STRING },
-	[PKG_REASON] = { "reason", UCL_STRING },
-	[PKG_FLATSIZE] = { "flatsize", UCL_INT },
-	[PKG_OLD_FLATSIZE] = { "oldflatsize", UCL_INT },
-	[PKG_PKGSIZE] = { "pkgsize", UCL_INT },
-	[PKG_LICENSE_LOGIC] = { "licenselogic", UCL_INT },
-	[PKG_AUTOMATIC] = { "automatic", UCL_BOOLEAN },
-	[PKG_LOCKED] = { "locked", UCL_BOOLEAN },
-	[PKG_ROWID] = { "rowid", UCL_INT },
-	[PKG_TIME] = { "time", UCL_INT },
-	[PKG_ANNOTATIONS] = { "annotations", UCL_OBJECT },
-	[PKG_LICENSES] = { "licenses", UCL_ARRAY },
-	[PKG_CATEGORIES] = { "categories", UCL_ARRAY },
-	[PKG_UNIQUEID] = { "uniqueid", UCL_STRING },
-	[PKG_OLD_DIGEST] = { "olddigest", UCL_STRING },
-};
-
 int
 pkg_new(struct pkg **pkg, pkg_t type)
 {
@@ -88,39 +51,6 @@ pkg_new(struct pkg **pkg, pkg_t type)
 	(*pkg)->rootfd = -1;
 
 	return (EPKG_OK);
-}
-
-void
-pkg_reset(struct pkg *pkg, pkg_t type)
-{
-	int i;
-
-	if (pkg == NULL)
-		return;
-
-	pkg->flags &= ~PKG_LOAD_CATEGORIES;
-	pkg->flags &= ~PKG_LOAD_LICENSES;
-	pkg->flags &= ~PKG_LOAD_ANNOTATIONS;
-
-	for (i = 0; i < PKG_NUM_SCRIPTS; i++)
-		sbuf_reset(pkg->scripts[i]);
-	pkg_list_free(pkg, PKG_DEPS);
-	pkg_list_free(pkg, PKG_RDEPS);
-	pkg_list_free(pkg, PKG_FILES);
-	pkg_list_free(pkg, PKG_DIRS);
-	pkg_list_free(pkg, PKG_OPTIONS);
-	pkg_list_free(pkg, PKG_USERS);
-	pkg_list_free(pkg, PKG_GROUPS);
-	pkg_list_free(pkg, PKG_SHLIBS_REQUIRED);
-	pkg_list_free(pkg, PKG_SHLIBS_PROVIDED);
-	pkg_list_free(pkg, PKG_PROVIDES);
-	pkg_list_free(pkg, PKG_REQUIRES);
-	if (pkg->rootfd != -1)
-		close(pkg->rootfd);
-	pkg->rootfd = -1;
-	pkg->rootpath[0] = '\0';
-
-	pkg->type = type;
 }
 
 void
@@ -147,6 +77,7 @@ pkg_free(struct pkg *pkg)
 	free(pkg->repopath);
 	free(pkg->repourl);
 	free(pkg->reason);
+	free(pkg->dep_formula);
 
 	for (int i = 0; i < PKG_NUM_SCRIPTS; i++)
 		sbuf_free(pkg->scripts[i]);
@@ -179,80 +110,6 @@ pkg_type(const struct pkg * restrict pkg)
 	assert(pkg != NULL);
 
 	return (pkg->type);
-}
-
-static ucl_object_t *
-manifest_schema_open(pkg_t type __unused)
-{
-	struct ucl_parser *parser;
-	static const char manifest_schema_str[] = ""
-		"{"
-		"  type = object;"
-		"  properties {"
-		"    origin = { type = string };"
-		"    name = { type = string };"
-		"    comment = { type = string };"
-		"    desc = { type = string };"
-		"    mtree = { type = string };"
-		"    message = { type = string };"
-		"    maintainer = { type = string };"
-		"    arch = { type = string };"
-		"    abi = { type = string };"
-		"    www = { type = string };"
-		"    prefix = { type = string };"
-		"    digest = { type = string };"
-		"    repopath = { type = string };"
-		"    sum = { type = string };"
-		"    oldversion = { type = string };"
-		"    reponame = { type = string };"
-		"    repourl = { type = string };"
-		"    reason = { type = string };"
-		"    flatsize = { type = integer }; "
-		"    oldflatsize = { type = integer }; "
-		"    pkgsize = { type = integer }; "
-		"    locked = { type = boolean }; "
-		"    rowid = { type = integer }; "
-		"    time = { type = integer }; "
-		"    annotations = { type = object }; "
-		"    licenses = { "
-		"      type = array; "
-		"      items = { type = string }; "
-		"      uniqueItems = true ;"
-		"    };"
-		"    categories = { "
-		"      type = array; "
-		"      items = { type = string }; "
-		"      uniqueItems = true ;"
-		"    };"
-		"  }\n"
-		"  required = ["
-		"    origin,"
-		"    name,"
-		"    comment,"
-		"    version,"
-		"    desc,"
-		"    maintainer,"
-		"    www,"
-		"    prefix,"
-		"  ]"
-		"}";
-
-	if (manifest_schema != NULL)
-		return (manifest_schema);
-
-	parser = ucl_parser_new(0);
-	if (!ucl_parser_add_chunk(parser, manifest_schema_str,
-	    sizeof(manifest_schema_str) -1)) {
-		pkg_emit_error("Cannot parse manifest schema: %s",
-		    ucl_parser_get_error(parser));
-		ucl_parser_free(parser);
-		return (NULL);
-	}
-
-	manifest_schema = ucl_parser_get_object(parser);
-	ucl_parser_free(parser);
-
-	return (manifest_schema);
 }
 
 int
@@ -415,6 +272,9 @@ pkg_vget(const struct pkg * restrict pkg, va_list ap)
 		case PKG_OLD_DIGEST:
 			*va_arg(ap, const char **) = pkg->old_digest;
 			break;
+		case PKG_DEP_FORMULA:
+			*va_arg(ap, const char **) = pkg->dep_formula;
+			break;
 		}
 	}
 
@@ -548,6 +408,10 @@ pkg_vset(struct pkg *pkg, va_list ap)
 			break;
 		case PKG_TIME:
 			pkg->timestamp = va_arg(ap, int64_t);
+			break;
+		case PKG_DEP_FORMULA:
+			free(pkg->dep_formula);
+			pkg->dep_formula = strdup(va_arg(ap, const char *));
 			break;
 		}
 	}
@@ -872,13 +736,13 @@ pkg_addrdep(struct pkg *pkg, const char *name, const char *origin, const char *v
 }
 
 int
-pkg_addfile(struct pkg *pkg, const char *path, const char *sha256, bool check_duplicates)
+pkg_addfile(struct pkg *pkg, const char *path, const char *sum, bool check_duplicates)
 {
-	return (pkg_addfile_attr(pkg, path, sha256, NULL, NULL, 0, 0, check_duplicates));
+	return (pkg_addfile_attr(pkg, path, sum, NULL, NULL, 0, 0, check_duplicates));
 }
 
 int
-pkg_addfile_attr(struct pkg *pkg, const char *path, const char *sha256,
+pkg_addfile_attr(struct pkg *pkg, const char *path, const char *sum,
     const char *uname, const char *gname, mode_t perm, u_long fflags,
     bool check_duplicates)
 {
@@ -907,8 +771,8 @@ pkg_addfile_attr(struct pkg *pkg, const char *path, const char *sha256,
 	pkg_file_new(&f);
 	strlcpy(f->path, path, sizeof(f->path));
 
-	if (sha256 != NULL)
-		strlcpy(f->sum, sha256, sizeof(f->sum));
+	if (sum != NULL)
+		f->sum = strdup(sum);
 
 	if (uname != NULL)
 		strlcpy(f->uname, uname, sizeof(f->uname));
@@ -1761,28 +1625,13 @@ int
 pkg_test_filesum(struct pkg *pkg)
 {
 	struct pkg_file *f = NULL;
-	struct stat	 st;
-	char sha256[SHA256_DIGEST_LENGTH * 2 + 1];
 	int rc = EPKG_OK;
 
 	assert(pkg != NULL);
 
 	while (pkg_files(pkg, &f) == EPKG_OK) {
-		if (f->sum[0] != '\0') {
-			if (lstat(f->path, &st) == -1) {
-				pkg_emit_errno("pkg_create_from_dir", "lstat failed");
-				return (EPKG_FATAL);
-			}
-			if (S_ISLNK(st.st_mode)) {
-				if (pkg_symlink_cksum(f->path, NULL, sha256) != EPKG_OK)
-					return (EPKG_FATAL);
-			}
-			else {
-				if (sha256_file(f->path, sha256) != EPKG_OK)
-					return (EPKG_FATAL);
-
-			}
-			if (strcmp(sha256, f->sum) != 0) {
+		if (f->sum != NULL) {
+			if (!pkg_checksum_validate_file(f->path, f->sum)) {
 				pkg_emit_file_mismatch(pkg, f, f->sum);
 				rc = EPKG_FATAL;
 			}
@@ -1800,25 +1649,22 @@ pkg_recompute(struct pkgdb *db, struct pkg *pkg)
 	int64_t flatsize = 0;
 	struct stat st;
 	bool regular = false;
-	char sha256[SHA256_DIGEST_LENGTH * 2 + 1];
+	char *sum;
 	int rc = EPKG_OK;
 
 	hl = kh_init_hardlinks();
 	while (pkg_files(pkg, &f) == EPKG_OK) {
 		if (lstat(f->path, &st) == 0) {
 			regular = true;
-			if (S_ISLNK(st.st_mode)) {
+			sum = pkg_checksum_generate_file(f->path,
+			    PKG_HASH_TYPE_SHA256_HEX);
+
+			if (S_ISLNK(st.st_mode))
 				regular = false;
-				if (pkg_symlink_cksum(f->path, NULL, sha256)
-				    != EPKG_OK) {
-					rc = EPKG_FATAL;
-					break;
-				}
-			} else {
-				if (sha256_file(f->path, sha256) != EPKG_OK) {
-					rc = EPKG_FATAL;
-					break;
-				}
+
+			if (sum == NULL) {
+				rc = EPKG_FATAL;
+				break;
 			}
 
 			if (st.st_nlink > 1)
@@ -1827,8 +1673,9 @@ pkg_recompute(struct pkgdb *db, struct pkg *pkg)
 			if (regular)
 				flatsize += st.st_size;
 		}
-		if (strcmp(sha256, f->sum) != 0)
-			pkgdb_file_set_cksum(db, f, sha256);
+		if (strcmp(sum, f->sum) != 0)
+			pkgdb_file_set_cksum(db, f, sum);
+		free(sum);
 	}
 	kh_destroy_hardlinks(hl);
 

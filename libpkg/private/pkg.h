@@ -39,7 +39,6 @@
 
 #include <archive.h>
 #include <sqlite3.h>
-#include <openssl/sha.h>
 #include <stdbool.h>
 #include <uthash.h>
 #include <utlist.h>
@@ -156,6 +155,7 @@ struct pkg {
 	char			*reponame;
 	char			*repourl;
 	char			*reason;
+	char			*dep_formula;
 	lic_t			 licenselogic;
 	int64_t			 pkgsize;
 	int64_t			 flatsize;
@@ -220,7 +220,7 @@ struct pkg_provide {
 struct pkg_file {
 	char		 path[MAXPATHLEN];
 	int64_t		 size;
-	char		 sum[SHA256_DIGEST_LENGTH * 2 + 1];
+	char		*sum;
 	char		 uname[MAXLOGNAME];
 	char		 gname[MAXLOGNAME];
 	mode_t		 perm;
@@ -493,11 +493,6 @@ int pkg_delete(struct pkg *pkg, struct pkgdb *db, unsigned flags);
 #define PKG_DELETE_NOSCRIPT (1<<2)
 #define PKG_DELETE_CONFLICT (1<<3)
 
-extern struct pkg_key {
-	const char *name;
-	int type;
-} pkg_keys[PKG_NUM_FIELDS];
-
 int pkg_fetch_file_to_fd(struct pkg_repo *repo, const char *url, int dest,
     time_t *t, ssize_t offset, int64_t size);
 int pkg_repo_fetch_package(struct pkg *pkg);
@@ -636,13 +631,27 @@ int pkg_checksum_generate(struct pkg *pkg, char *dest, size_t destlen,
  */
 unsigned char * pkg_checksum_data(const unsigned char *in, size_t inlen,
 	pkg_checksum_type_t type);
+unsigned char *pkg_checksum_fd(int fd, pkg_checksum_type_t type);
+unsigned char *pkg_checksum_file(const char *path, pkg_checksum_type_t type);
+unsigned char *pkg_checksum_fileat(int fd, const char *path,
+    pkg_checksum_type_t type);
+unsigned char *pkg_checksum_symlink(const char *path, const char *root,
+    pkg_checksum_type_t type);
+unsigned char *pkg_checksum_symlinkat(int fd, const char *path,
+    const char *root, pkg_checksum_type_t type);
+bool pkg_checksum_validate_file(const char *path, const  char *sum);
+bool pkg_checksum_validate_fileat(int fd, const char *path, const  char *sum);
 
 bool pkg_checksum_is_valid(const char *cksum, size_t clen);
 pkg_checksum_type_t pkg_checksum_get_type(const char *cksum, size_t clen);
+pkg_checksum_type_t pkg_checksum_file_get_type(const char *cksum, size_t clen);
 pkg_checksum_type_t pkg_checksum_type_from_string(const char *name);
 const char* pkg_checksum_type_to_string(pkg_checksum_type_t type);
 size_t pkg_checksum_type_size(pkg_checksum_type_t type);
 int pkg_checksum_calculate(struct pkg *pkg, struct pkgdb *db);
+char *pkg_checksum_generate_file(const char *path, pkg_checksum_type_t type);
+char *pkg_checksum_generate_fileat(int fd, const char *path,
+    pkg_checksum_type_t type);
 
 int pkg_add_upgrade(struct pkgdb *db, const char *path, unsigned flags,
     struct pkg_manifest_key *keys, const char *location,

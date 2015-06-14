@@ -105,6 +105,7 @@ pkg_file_new(struct pkg_file **file)
 void
 pkg_file_free(struct pkg_file *file)
 {
+	free(file->sum);
 	free(file);
 }
 
@@ -182,7 +183,10 @@ pkg_script_get(struct pkg const * const p, pkg_script i)
 	if (p->scripts[i] == NULL)
 		return (NULL);
 
-	return (sbuf_get(p->scripts[i]));
+	if (sbuf_done(p->scripts[i]) == 0)
+		sbuf_finish(p->scripts[i]);
+
+	return (sbuf_data(p->scripts[i]));
 }
 
 /*
@@ -232,6 +236,15 @@ pkg_shlib_free(struct pkg_shlib *sl)
 
 	free(sl->name);
 	free(sl);
+}
+
+const char *
+pkg_shlib_name(const struct pkg_shlib *sl)
+{
+	if (sl == NULL)
+		return (NULL);
+
+	return (sl->name);
 }
 
 /*
@@ -352,4 +365,16 @@ pkg_kv_free(struct pkg_kv *c)
 	free(c->key);
 	free(c->value);
 	free(c);
+}
+
+/*
+ * provide
+ */
+const char *
+pkg_provide_name(const struct pkg_provide *provide)
+{
+	if (provide == NULL)
+		return (NULL);
+
+	return (provide->provide);
 }

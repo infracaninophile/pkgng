@@ -83,6 +83,7 @@ static struct manifest_key {
 	{ "comment",             PKG_COMMENT,             UCL_STRING, pkg_string},
 	{ "conflicts",           PKG_CONFLICTS,           UCL_ARRAY,  pkg_array},
 	{ "config",              PKG_CONFIG_FILES,        UCL_ARRAY,  pkg_array},
+	{ "dep_formula",         PKG_DEP_FORMULA,         UCL_STRING, pkg_string},
 	{ "deps",                PKG_DEPS,                UCL_OBJECT, pkg_obj},
 	{ "desc",                PKG_DESC,                UCL_STRING, pkg_string},
 	{ "directories",         PKG_DIRECTORIES,         UCL_OBJECT, pkg_obj},
@@ -326,6 +327,9 @@ pkg_string(struct pkg *pkg, const ucl_object_t *obj, int attr)
 	case PKG_WWW:
 		pkg->www = strdup(str);
 		break;
+	case PKG_DEP_FORMULA:
+		pkg->dep_formula = strdup(str);
+		break;
 	}
 
 	return (ret);
@@ -496,7 +500,7 @@ pkg_obj(struct pkg *pkg, const ucl_object_t *obj, int attr)
 			if (cur->type == UCL_STRING) {
 				buf = ucl_object_tolstring(cur, &len);
 				urldecode(key, &tmp);
-				pkg_addfile(pkg, sbuf_get(tmp), len == 64 ? buf : NULL, false);
+				pkg_addfile(pkg, sbuf_data(tmp), len >= 2 ? buf : NULL, false);
 			} else if (cur->type == UCL_OBJECT)
 				pkg_set_files_from_object(pkg, cur);
 			else
@@ -1132,8 +1136,8 @@ pkg_emit_object(struct pkg *pkg, short flags)
 			pkg_debug(4, "Emitting files");
 			map = NULL;
 			while (pkg_files(pkg, &file) == EPKG_OK) {
-				if (file->sum[0] == '\0')
-					file->sum[1] = '-';
+				if (file->sum == NULL)
+					file->sum = strdup("-");
 
 				urlencode(file->path, &tmpsbuf);
 				if (map == NULL)
@@ -1332,7 +1336,7 @@ pkg_emit_manifest(struct pkg *pkg, char **dest, short flags, char **pdigest)
 	}
 
 	sbuf_finish(b);
-	*dest = strdup(sbuf_get(b));
+	*dest = strdup(sbuf_data(b));
 	sbuf_delete(b);
 
 	return (rc);

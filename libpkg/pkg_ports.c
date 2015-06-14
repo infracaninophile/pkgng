@@ -315,9 +315,8 @@ meta_file(struct plist *p, char *line, struct file_attr *a, bool is_config)
 	char stagedpath[MAXPATHLEN];
 	char *testpath;
 	struct stat st;
-	char *buf;
+	char *buf = NULL;
 	bool regular = false;
-	char sha256[SHA256_DIGEST_LENGTH * 2 + 1];
 	int ret = EPKG_OK;
 
 	len = strlen(line);
@@ -358,20 +357,17 @@ meta_file(struct plist *p, char *line, struct file_attr *a, bool is_config)
 			regular = !check_for_hardlink(p->hardlinks, &st);
 		else
 			regular = true;
-	} else if (S_ISLNK(st.st_mode)) {
-		if (pkg_symlink_cksum(testpath, p->stage, sha256) == EPKG_OK) {
-			buf = sha256;
-			regular = false;
-		} else {
-			free_file_attr(a);
-			return (EPKG_FATAL);
-		}
+	} else if (S_ISLNK(st.st_mode))
+		regular = false;
+
+	buf = pkg_checksum_generate_file(testpath, PKG_HASH_TYPE_SHA256_HEX);
+	if (buf == NULL) {
+		free_file_attr(a);
+		return (EPKG_FATAL);
 	}
 
 	if (regular) {
 		p->flatsize += st.st_size;
-		sha256_file(testpath, sha256);
-		buf = sha256;
 		if (is_config) {
 			size_t sz;
 			char *content;
@@ -384,6 +380,7 @@ meta_file(struct plist *p, char *line, struct file_attr *a, bool is_config)
 			pkg_emit_error("Plist error, @config %s: not a regular "
 			    "file", line);
 			free_file_attr(a);
+			free(buf);
 			return (EPKG_FATAL);
 		}
 	}
@@ -393,6 +390,7 @@ meta_file(struct plist *p, char *line, struct file_attr *a, bool is_config)
 		pkg_emit_error("Plist error, directory listed as a file: %s",
 		    line);
 		free_file_attr(a);
+		free(buf);
 		return (EPKG_FATAL);
 	}
 
@@ -418,6 +416,7 @@ meta_file(struct plist *p, char *line, struct file_attr *a, bool is_config)
 			    p->gname, p->perm, 0, true);
 	}
 
+	free(buf);
 	free_file_attr(a);
 
 	return (ret);
@@ -1120,7 +1119,7 @@ flush_script_buffer(struct sbuf *buf, struct pkg *p, int type)
 {
 	if (sbuf_len(buf) > 0) {
 		sbuf_finish(buf);
-		pkg_appendscript(p, sbuf_get(buf), type);
+		pkg_appendscript(p, sbuf_data(buf), type);
 	}
 }
 

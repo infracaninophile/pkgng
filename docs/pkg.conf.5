@@ -136,6 +136,9 @@ services during package installation and deinstallation.
 Services are only started on installation if they are enabled in
 .Pa /etc/rc.conf .
 Default: NO.
+.It Cm HTTP_USER_AGENT: string
+Define User-agent to be sent to HTTP server when getting reposity
+data
 .It Cm INDEXDIR: string
 If set, the directory to search for
 .Cm INDEXFILE
@@ -299,7 +302,7 @@ Specifies the URL to fetch the
 .Pa vuln.xml
 vulnerability database from.
 Default:
-.Pa http://www.vuxml.org/freebsd/vuln.xml.bz2 .
+.Pa http://vuxml.freebsd.org/freebsd/vuln.xml.bz2 .
 .It Cm WORKERS_COUNT: integer
 How many workers are used for pkg-repo.
 If set to 0,

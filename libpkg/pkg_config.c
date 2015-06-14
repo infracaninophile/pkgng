@@ -225,6 +225,12 @@ static struct config_entry c[] = {
 	},
 	{
 		PKG_STRING,
+		"HTTP_USER_AGENT",
+		"pkg/"PKGVERSION,
+		"HTTP User-Agent",
+	},
+	{
+		PKG_STRING,
 		"EVENT_PIPE",
 		NULL,
 		"Send all events to the specified fifo or Unix socket",
@@ -761,6 +767,7 @@ pkg_ini(const char *path, const char *reposdir, pkg_init_flags flags)
 	const char *buf, *walk, *value, *key, *k;
 	const char *evkey = NULL;
 	const char *nsname = NULL;
+	const char *useragent = NULL;
 	const char *evpipe = NULL;
 	const ucl_object_t *cur, *object;
 	ucl_object_t *obj = NULL, *o, *ncfg;
@@ -872,6 +879,8 @@ pkg_ini(const char *path, const char *reposdir, pkg_init_flags flags)
 		asprintf(&rootedpath, "%s/%s", pkg_rootdir, path);
 
 	p = ucl_parser_new(0);
+	ucl_parser_register_variable (p, "ABI", myabi);
+	ucl_parser_register_variable (p, "ALTABI", myabi_legacy);
 
 	errno = 0;
 	obj = NULL;
@@ -1056,10 +1065,12 @@ pkg_ini(const char *path, const char *reposdir, pkg_init_flags flags)
 			setenv(evkey, ucl_object_tostring_forced(cur), 1);
 	}
 
+	/* Set user-agent */
+	useragent = pkg_object_string(pkg_config_get("HTTP_USER_AGENT"));
+	setenv("HTTP_USER_AGENT", useragent, 1);
+
 	/* load the repositories */
 	load_repositories(reposdir, flags);
-
-	setenv("HTTP_USER_AGENT", "pkg/"PKGVERSION, 1);
 
 	/* bypass resolv.conf with specified NAMESERVER if any */
 	nsname = pkg_object_string(pkg_config_get("NAMESERVER"));
